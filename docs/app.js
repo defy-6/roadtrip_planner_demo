@@ -4,7 +4,7 @@ const shareAssetPath = isShareMode ? './' : '/';
 if (isShareMode) document.documentElement.classList.add('share-mode');
 const itemsEl = document.querySelector('#items');
 const template = document.querySelector('#itemTpl');
-const state = { items: [], dragging: null, schedule: [], locations: [], routes: [], versionKey: 'xinjiang-roadtrip', plans: [], preferences: { pace: '适中', vehicle: '自驾', buffer: '30' }, dayFilter: '', selectedIndex: null };
+const state = { items: [], dragging: null, schedule: [], locations: [], routes: [], placeCategories: [], versionKey: 'xinjiang-roadtrip', plans: [], preferences: { pace: '适中', vehicle: '自驾', buffer: '30' }, dayFilter: '', selectedIndex: null };
 const $ = (s, el = document) => el.querySelector(s);
 const defaultPlanId = 'xinjiang-roadtrip';
 function planIdFromName(name) { return `${String(name || 'plan').trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '') || 'plan'}-${crypto.randomUUID().slice(0, 8)}`; }
@@ -69,9 +69,25 @@ const markerColors = { spot: '#1d6b4f', geography: '#0f766e', food: '#d97706', h
 const typeNames = { spot: '景点', geography: '地名', food: '饮食', hotel: '住宿', drive: '路程', flight: '机场', transport: '交通', service: '服务区', fuel: '加油站', supply: '补给' };
 // 地点库保留细分类，地图图例按更易读的出行类别合并。
 const mapDisplayType = type => ['flight', 'transport'].includes(type) ? 'transport' : ['service', 'fuel', 'supply'].includes(type) ? 'supply' : type;
-const mapDisplayTypeName = type => ({ transport: '交通', supply: '补给' }[mapDisplayType(type)] || typeNames[type] || type);
+function normalizeCategoryColor(value, fallback = '#2f73a9') { return /^#[0-9a-f]{6}$/i.test(String(value || '')) ? value : fallback; }
+function customPlaceCategories() { return (state.placeCategories || []).filter(category => category?.id && category?.name); }
+function placeCategoryMeta(type) { return customPlaceCategories().find(category => category.id === type); }
+function placeTypeName(type) { return placeCategoryMeta(type)?.name || typeNames[type] || '地点'; }
+function placeTypeColor(type) { return normalizeCategoryColor(placeCategoryMeta(type)?.color, markerColors[mapDisplayType(type)] || markerColors.spot); }
+function placeTypeOptionsHtml(includeDrive = false) {
+  const defaults = Object.entries(typeNames).filter(([type]) => includeDrive || type !== 'drive');
+  return [...defaults, ...customPlaceCategories().map(category => [category.id, category.name])].map(([type, label]) => `<option value="${escapeHtml(type)}">${escapeHtml(label)}</option>`).join('');
+}
+function renderPlaceTypeFilter() {
+  const select = $('#placeTypeFilter'); if (!select) return;
+  const selected = placeTypeFilter;
+  select.innerHTML = `<option value="">全部类型</option>${placeTypeOptionsHtml()}`;
+  select.value = [...select.options].some(option => option.value === selected) ? selected : '';
+  placeTypeFilter = select.value;
+}
+const mapDisplayTypeName = type => ({ transport: '交通', supply: '补给' }[mapDisplayType(type)] || placeTypeName(type));
 function mapPointStyle(type, options = {}) {
-  const color = markerColors[mapDisplayType(type)] || markerColors.spot;
+  const color = placeTypeColor(type);
   return { radius: 3.5, color, weight: 1.3, fillColor: color, fillOpacity: .95, ...options };
 }
 const eventTypeNames = { spot: '游玩', food: '用餐', hotel: '入住 / 休息', drive: '路程', flight: '航班', transport: '交通 / 手续', service: '服务区停靠', fuel: '加油 / 采购', supply: '补给' };
@@ -144,7 +160,7 @@ priceFields.addEventListener('input', updateEditorPriceTotal);
 priceFields.onclick = event => { const add = event.target.closest('[data-add-price]'); if (add) { addEditorPriceLine(add.dataset.addPrice); updateEditorPriceTotal(); } const remove = event.target.closest('[data-remove-price]'); if (remove) { remove.closest('.editor-price-line')?.remove(); updateEditorPriceTotal(); } };
 const locationsPanel = document.createElement('section');
 locationsPanel.className = 'locations-panel';
-locationsPanel.innerHTML = '<div class="aside-head"><h3>通用地点库 <small id="placeCount"></small></h3><button type="button" id="addPlaceBtn">+ 地点</button></div><p class="hint">所有行程方案共用；普通事件关联一个地点，路程关联起点、终点和途经点。</p><div class="location-toolbar"><input id="placeSearch" type="search" placeholder="搜索名称、地址或备注"><select id="placeTypeFilter" aria-label="按地点类型筛选"><option value="">全部类型</option><option value="spot">景点</option><option value="geography">地名</option><option value="food">饮食</option><option value="hotel">住宿</option><option value="flight">机场</option><option value="transport">交通</option><option value="service">服务区</option><option value="fuel">加油站</option><option value="supply">补给</option></select><button type="button" id="selectAllPlaces">全选结果</button><button type="button" id="resolveSelectedPlaces">批量查询位置</button><button type="button" class="danger" id="deleteSelectedPlaces">批量删除</button></div><details class="batch-add"><summary>批量新增地点</summary><textarea id="batchPlaceInput" placeholder="每行：类型｜名称｜地址\n例如：地名｜伊宁市｜新疆伊犁州伊宁市"></textarea><div class="batch-actions"><button type="button" id="batchAddPlaces">导入这些地点</button><small>景点、地名、饮食、住宿、机场、服务区、加油站、补给</small></div></details><div id="places" class="places"></div>';
+locationsPanel.innerHTML = '<div class="aside-head"><h3>通用地点库 <small id="placeCount"></small></h3><button type="button" id="addPlaceBtn">+ 地点</button></div><p class="hint">地点跨计划通用；自定义地点类别仅保存于当前计划。</p><div class="location-toolbar"><input id="placeSearch" type="search" placeholder="搜索名称、地址或备注"><select id="placeTypeFilter" aria-label="按地点类型筛选"></select><button type="button" id="selectAllPlaces">全选结果</button><button type="button" id="resolveSelectedPlaces">批量查询位置</button><button type="button" class="danger" id="deleteSelectedPlaces">批量删除</button></div><details class="batch-add"><summary>批量新增地点</summary><textarea id="batchPlaceInput" placeholder="每行：类型｜名称｜地址\n例如：地名｜伊宁市｜新疆伊犁州伊宁市"></textarea><div class="batch-actions"><button type="button" id="batchAddPlaces">导入这些地点</button><small>景点、地名、饮食、住宿、机场、服务区、加油站、补给</small></div></details><div id="places" class="places"></div>';
 document.querySelector('.content').insertAdjacentElement('afterend', locationsPanel);
 const schedulePanel = document.querySelector('.schedule-panel');
 const mapWorkspace = document.querySelector('.content');
@@ -204,15 +220,21 @@ scheduleExportPreview.innerHTML = '<section><div class="aside-head"><h3>时间�
 document.body.append(scheduleExportPreview);
 let pendingScheduleExportCanvas;
 const locationActions = document.createElement('div'); locationActions.className = 'location-head-actions';
-const addPlaceButton = $('#addPlaceBtn'); addPlaceButton.before(locationActions); locationActions.append(addPlaceButton, createExpandButton(locationsPanel, '地点库'));
+const addPlaceCategoryButton = document.createElement('button'); addPlaceCategoryButton.type = 'button'; addPlaceCategoryButton.id = 'addPlaceCategoryBtn'; addPlaceCategoryButton.className = 'ghost'; addPlaceCategoryButton.textContent = '+ 类别';
+const addPlaceButton = $('#addPlaceBtn'); addPlaceButton.before(locationActions); locationActions.append(addPlaceCategoryButton, addPlaceButton, createExpandButton(locationsPanel, '地点库'));
 const placeEditor = document.createElement('dialog');
 placeEditor.id = 'placeEditor'; placeEditor.className = 'event-editor';
-placeEditor.innerHTML = '<form id="placeEditorForm" class="editor-form" method="dialog"><h3>新增地点</h3><label>地点类型<select id="newPlaceType"><option value="spot">景点</option><option value="geography">地名</option><option value="food">饮食</option><option value="hotel">住宿</option><option value="flight">机场</option><option value="transport">交通</option><option value="service">服务区</option><option value="fuel">加油站</option><option value="supply">补给</option></select></label><label>地点名称<input id="newPlaceName" required placeholder="例如：赛里木湖东门"></label><label>详细地址<input id="newPlaceAddress" placeholder="地址未确定可留空"></label><label>地点图片（可选）<input id="newPlacePhoto" type="file" accept="image/*"></label><label>备注<textarea id="newPlaceNote" rows="3" placeholder="预约、营业时间等信息"></textarea></label><div class="editor-actions"><button type="button" id="placeEditorCancel" class="ghost">取消</button><button type="submit">保存地点</button></div></form>';
+placeEditor.innerHTML = '<form id="placeEditorForm" class="editor-form" method="dialog"><h3>新增地点</h3><label>地点类型<select id="newPlaceType"></select></label><label>地点名称<input id="newPlaceName" required placeholder="例如：赛里木湖东门"></label><label>详细地址<input id="newPlaceAddress" placeholder="地址未确定可留空"></label><label>地点图片（可选）<input id="newPlacePhoto" type="file" accept="image/*"></label><label>备注<textarea id="newPlaceNote" rows="3" placeholder="预约、营业时间等信息"></textarea></label><div class="editor-actions"><button type="button" id="placeEditorCancel" class="ghost">取消</button><button type="submit">保存地点</button></div></form>';
 document.body.append(placeEditor);
+const placeCategoryEditor = document.createElement('dialog');
+placeCategoryEditor.id = 'placeCategoryEditor'; placeCategoryEditor.className = 'event-editor';
+placeCategoryEditor.innerHTML = '<form id="placeCategoryEditorForm" class="editor-form" method="dialog"><h3>新增地点类别</h3><p class="hint">仅当前计划可用；地点库中的地点仍可跨计划复用。</p><label>类别名称<input id="newPlaceCategoryName" required maxlength="16" placeholder="例如：露营地"></label><label>图例颜色<input id="newPlaceCategoryColor" type="color" value="#2f73a9"></label><div class="editor-actions"><button type="button" id="placeCategoryEditorCancel" class="ghost">取消</button><button type="submit">保存类别</button></div></form>';
+document.body.append(placeCategoryEditor);
 let pendingPlaceConfirmation;
 function fileToDataUrl(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); }); }
 function confirmNewPlace(initial = {}) {
   $('#placeEditorForm').reset();
+  $('#newPlaceType').innerHTML = placeTypeOptionsHtml();
   $('#newPlaceType').value = initial.type || placeTypeFilter || 'spot';
   $('#newPlaceName').value = initial.name || '';
   $('#newPlaceAddress').value = initial.address || '';
@@ -240,7 +262,7 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.map-expand{left:12px!important;right:auto!important;z-index:1100!important}@media(min-width:981px){.schedule-panel,.content,.locations-panel{height:100%!important;max-height:100%!important;align-self:stretch!important;overflow:hidden!important}.schedule-panel .schedule{overflow:hidden}.content>.map-panel{overflow:hidden}}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.map-day-control{position:absolute;left:72px;top:12px;z-index:1100;display:flex;align-items:center;gap:5px;padding:4px 6px;border:1px solid #cbd8cf;border-radius:7px;background:#fffdf8eb;box-shadow:0 2px 8px #173c3220;color:#315540;font-size:9px}.map-day-control span{white-space:nowrap}.map-day-control select{max-width:132px;border:0;background:transparent;color:#173c32;font:10px inherit;outline:0}@media(max-width:980px){.map-day-control{left:12px;top:54px}}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: ':root{--text-xs:clamp(9px,.62vw,11px);--text-sm:clamp(10px,.72vw,12px);--text-md:clamp(12px,.86vw,14px);--text-lg:clamp(15px,1.15vw,19px);--text-xl:clamp(22px,2vw,32px)}body{font-size:var(--text-md)}header h1{font-size:var(--text-xl)!important}.hero #tripName{font-size:var(--text-lg)!important}.hero p,.route-stat small{font-size:var(--text-sm)!important}.route-stat strong{font-size:clamp(18px,1.65vw,27px)!important}.workspace-panel{container-type:inline-size}.schedule-panel>.aside-head h2,.locations-panel>.aside-head h3{font-size:clamp(14px,1.4cqw,19px)!important}.schedule-panel>.aside-head button,.schedule-panel>.aside-head select,.schedule-panel #scheduleHint,.location-toolbar input,.location-toolbar select,.location-toolbar button,.batch-add summary,.batch-add button{font-size:clamp(9px,1.05cqw,12px)!important}.calendar-head b{font-size:clamp(12px,1.45cqw,16px)!important}.calendar-head small,.time-label{font-size:clamp(9px,1.05cqw,12px)!important}.calendar-block{font-size:clamp(10px,1.18cqw,13px)!important}.calendar-block time{font-size:clamp(9px,1.08cqw,12px)!important}.calendar-block b{font-size:clamp(10px,1.22cqw,14px)!important}.calendar-block small{font-size:clamp(8px,1cqw,11px)!important}.calendar-block em{font-size:clamp(8px,.92cqw,10px)!important}.place-card b{font-size:clamp(11px,1.5cqw,15px)!important}.place-card input,.place-card textarea,.place-card button,.place-photo-action{font-size:clamp(9px,1.2cqw,12px)!important}.place-type,.resolved-place,.place-card .hint{font-size:clamp(8px,1.05cqw,11px)!important}.route-detail{font-size:clamp(9px,1.12cqw,12px)!important}.route-detail b{font-size:clamp(10px,1.25cqw,14px)!important}.leaflet-popup-content{font-size:clamp(11px,.8vw,13px);line-height:1.45}@container (min-width:700px){.calendar-block{padding:7px 9px}.calendar-block b{line-height:1.3}.calendar-block small{-webkit-line-clamp:3}.schedule-panel>.aside-head{padding-bottom:4px}.locations-panel>.places{gap:12px}.place-card{gap:8px;padding:11px}.place-photo-preview{height:130px}}@container (max-width:360px){.schedule-panel>.aside-head{align-items:flex-start!important}.schedule-panel>.aside-head>div:last-child{max-width:68%;justify-content:flex-end}.calendar-block{padding:4px 5px}.calendar-block small{-webkit-line-clamp:1}.locations-panel>p.hint{line-height:1.25}.location-toolbar{gap:3px}.place-card{gap:5px}.place-photo-preview{height:78px}}' }));
-document.head.append(Object.assign(document.createElement('style'), { textContent: '.share-mode #addScheduleBtn,.share-mode #importFlightBtn,.share-mode #updateScheduleWeather,.share-mode #addPlaceBtn,.share-mode #selectAllPlaces,.share-mode #resolveSelectedPlaces,.share-mode #deleteSelectedPlaces,.share-mode #newPlanBtn,.share-mode #copyPlanBtn,.share-mode #deletePlanBtn,.share-mode .batch-add,.share-mode .content>aside{display:none!important}.share-mode #tripName{pointer-events:none;border-color:transparent!important;background:transparent!important}.share-mode .place-card .place-select,.share-mode .place-card .place-type-select,.share-mode .place-card .place-name,.share-mode .place-card .place-address,.share-mode .place-card .place-note,.share-mode .place-card .place-photo-action,.share-mode .place-card .place-save,.share-mode .place-card .place-resolve,.share-mode .place-card .place-delete{display:none!important}.share-mode .place-card{grid-template-columns:1fr!important}.share-mode .place-card .place-map{display:inline-flex!important}.share-mode .place-card .place-photo-preview,.share-mode .place-card .place-photo-placeholder,.share-mode .place-card .resolved-place{grid-column:1/-1}.share-mode .locations-panel>p.hint::after{content:" · 共享页面为只读，数据以发布时版本为准。"}.share-mode .hero{box-shadow:inset 3px 0 #d4a72c}.share-mode #fileSaveStatus{color:#8b6510!important;font-weight:700}' }));
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.share-mode #addScheduleBtn,.share-mode #importFlightBtn,.share-mode #updateScheduleWeather,.share-mode #addPlaceBtn,.share-mode #addPlaceCategoryBtn,.share-mode #selectAllPlaces,.share-mode #resolveSelectedPlaces,.share-mode #deleteSelectedPlaces,.share-mode #newPlanBtn,.share-mode #copyPlanBtn,.share-mode #deletePlanBtn,.share-mode .batch-add,.share-mode .content>aside{display:none!important}.share-mode #tripName{pointer-events:none;border-color:transparent!important;background:transparent!important}.share-mode .place-card .place-select,.share-mode .place-card .place-type-select,.share-mode .place-card .place-name,.share-mode .place-card .place-address,.share-mode .place-card .place-note,.share-mode .place-card .place-photo-action,.share-mode .place-card .place-save,.share-mode .place-card .place-resolve,.share-mode .place-card .place-delete{display:none!important}.share-mode .place-card{grid-template-columns:1fr!important}.share-mode .place-card .place-map{display:inline-flex!important}.share-mode .place-card .place-photo-preview,.share-mode .place-card .place-photo-placeholder,.share-mode .place-card .resolved-place{grid-column:1/-1}.share-mode .locations-panel>p.hint::after{content:" · 共享页面为只读，数据以发布时版本为准。"}.share-mode .hero{box-shadow:inset 3px 0 #d4a72c}.share-mode #fileSaveStatus{color:#8b6510!important;font-weight:700}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.calendar-grid{grid-template-rows:38px auto!important}.calendar-day,.time-rail{height:var(--calendar-height)!important}.time-label{height:var(--hour-height)!important;padding-top:0!important;transform:translateY(-5px)!important}.calendar-day{background-image:repeating-linear-gradient(to bottom,transparent 0,transparent calc(var(--hour-height) - 1px),#eeeae0 var(--hour-height))!important}.schedule-panel:not(.is-expanded) .schedule-scroll{overflow-y:hidden!important}.schedule-panel:not(.is-expanded) .calendar-block{padding:1px 4px!important;border-radius:4px;line-height:1!important;white-space:nowrap;text-overflow:ellipsis}.schedule-panel:not(.is-expanded) .calendar-block time,.schedule-panel:not(.is-expanded) .calendar-block em,.schedule-panel:not(.is-expanded) .calendar-block b{display:inline!important;vertical-align:middle;white-space:nowrap}.schedule-panel:not(.is-expanded) .calendar-block time{margin-right:4px;font-size:8px!important}.schedule-panel:not(.is-expanded) .calendar-block em{margin:0 4px 0 0;padding:0 3px;font-size:7px!important}.schedule-panel:not(.is-expanded) .calendar-block b{font-size:9px!important}.schedule-panel:not(.is-expanded) .calendar-block small{display:none!important}.schedule-panel:not(.is-expanded) .calendar-block.compact>*{display:none!important}.schedule-panel:not(.is-expanded) .calendar-block.compact{min-height:0;border-radius:2px}.schedule-panel.is-expanded .schedule-scroll{overflow-y:auto!important}.schedule-panel.is-expanded .calendar-grid{grid-template-rows:48px auto!important}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '@media(min-width:981px){main{grid-template-rows:74px minmax(0,1fr)!important;gap:10px 12px!important}main>header{grid-column:1/-1!important;grid-row:1!important;height:74px;display:grid!important;grid-template-columns:92px minmax(300px,1fr) auto;gap:12px;align-items:center;padding:0 4px}header>div:first-child{align-self:center}header h1{font-size:25px!important}.top-actions{justify-self:end}.top-actions .hint{max-width:165px;overflow:hidden;text-overflow:ellipsis}.hero{grid-column:auto!important;grid-row:auto!important;height:54px;min-width:0;margin:0!important;padding:7px 12px!important;border:1px solid #d5e2d9;border-radius:10px!important;background:#eaf2ed!important;background-image:none!important;color:#173c32!important;display:flex!important;align-items:center;justify-content:space-between;gap:12px}.hero>div:first-child{min-width:0;display:block}.hero #tripName{width:min(310px,28vw)!important;color:#173c32!important;border-color:#87aa98;font-size:14px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hero p{display:none}.hero .route-stat{min-width:0;display:grid!important;grid-template-columns:auto auto;gap:0 8px;text-align:right}.hero .route-stat span{font-size:8px}.hero .route-stat strong{font-size:18px!important;line-height:1}.hero .route-stat small{grid-column:1/-1;max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:8px!important}.schedule-panel,.content,.locations-panel{grid-row:2!important}.panel-expanded .workspace-panel.is-expanded{grid-row:2!important}.locations-panel:not(.is-expanded) .place-card{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px!important;padding:7px!important}.locations-panel:not(.is-expanded) .place-card>div{grid-column:1/-1}.locations-panel:not(.is-expanded) .place-type-select{grid-column:1}.locations-panel:not(.is-expanded) .place-name{grid-column:2/-1}.locations-panel:not(.is-expanded) .place-address,.locations-panel:not(.is-expanded) .resolved-place{grid-column:1/-1}.locations-panel:not(.is-expanded) .place-photo-placeholder,.locations-panel:not(.is-expanded) .place-note{display:none}.locations-panel:not(.is-expanded) .place-photo-preview{grid-column:1/-1;height:62px}.locations-panel:not(.is-expanded) .place-photo-action{grid-column:1/-1}.locations-panel:not(.is-expanded) .place-card button{width:100%;padding:4px 3px!important;white-space:nowrap}.locations-panel:not(.is-expanded) .resolved-place{max-height:34px;overflow:hidden;padding:4px 6px}.locations-panel:not(.is-expanded) .place-card input,.locations-panel:not(.is-expanded) .place-card select{min-width:0;padding:3px 2px}.locations-panel.is-expanded .place-photo-placeholder{display:grid}}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '@media(min-width:981px){main{grid-template-columns:minmax(290px,32%) minmax(360px,42%) minmax(240px,26%)!important}.schedule-panel .calendar-grid[style*="--grid-width:100%"]{width:100%;min-width:100%}.schedule-panel .calendar-grid[style*="--grid-width:100%"]{grid-template-columns:52px minmax(0,1fr)!important}}' }));
@@ -759,11 +781,12 @@ function renderLocations() {
   const places = $('#places');
   if (!places) return;
   const query = placeSearchText.toLowerCase();
-  const typeOrder = ['spot', 'geography', 'food', 'hotel', 'flight', 'transport', 'service', 'fuel', 'supply', 'drive'];
-  const visibleLocations = state.locations.filter(place => (!placeTypeFilter || place.type === placeTypeFilter) && (!query || `${place.name || ''} ${place.address || ''} ${place.note || ''} ${typeNames[place.type] || ''}`.toLowerCase().includes(query))).sort((a, b) => (typeOrder.indexOf(a.type) < 0 ? 99 : typeOrder.indexOf(a.type)) - (typeOrder.indexOf(b.type) < 0 ? 99 : typeOrder.indexOf(b.type)) || String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN'));
+  renderPlaceTypeFilter();
+  const typeOrder = ['spot', 'geography', 'food', 'hotel', 'flight', 'transport', 'service', 'fuel', 'supply', ...customPlaceCategories().map(category => category.id), 'drive'];
+  const visibleLocations = state.locations.filter(place => (!placeTypeFilter || place.type === placeTypeFilter) && (!query || `${place.name || ''} ${place.address || ''} ${place.note || ''} ${placeTypeName(place.type)}`.toLowerCase().includes(query))).sort((a, b) => (typeOrder.indexOf(a.type) < 0 ? 99 : typeOrder.indexOf(a.type)) - (typeOrder.indexOf(b.type) < 0 ? 99 : typeOrder.indexOf(b.type)) || String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN'));
   $('#placeCount').textContent = `(${visibleLocations.length}/${state.locations.length})`;
-  const placeTypes = Object.entries(typeNames).filter(([type]) => type !== 'drive').map(([type, label]) => `<option value="${type}">${label}</option>`).join('');
-  places.innerHTML = visibleLocations.length ? visibleLocations.map(place => `<article class="place-card${selectedPlaceIds.has(place.id) ? ' selected' : ''}" data-place-id="${place.id}"><div><input type="checkbox" class="place-select" aria-label="选择 ${escapeHtml(place.name || '未命名地点')}" ${selectedPlaceIds.has(place.id) ? 'checked' : ''}><span class="place-type type-${escapeHtml(place.type || 'spot')}">${escapeHtml(typeNames[place.type] || '地点')}</span><b>${escapeHtml(place.name || '未命名地点')}</b></div><select class="place-type-select">${placeTypes}</select><input class="place-name" value="${escapeHtml(place.name || '')}" placeholder="景点、地名、酒店、餐厅等名称"><input class="place-address" value="${escapeHtml(place.address || '')}" placeholder="具体地址待定可留空">${place.photo ? `<img class="place-photo-preview" src="${escapeHtml(place.photo)}" alt="${escapeHtml(place.name || '地点')}图片">` : '<div class="place-photo-placeholder">暂未上传地点图片</div>'}<label class="place-photo-action">${place.photo ? '更换图片' : '上传图片'}<input class="place-photo-input" type="file" accept="image/*"></label>${place.resolved ? `<small class="resolved-place">高德：${escapeHtml(place.resolved.name)} · ${escapeHtml(place.resolved.address)}<br>${escapeHtml(place.resolved.location)}</small>` : '<small class="hint">尚未查询高德位置</small>'}<textarea class="place-note" placeholder="备注">${escapeHtml(place.note || '')}</textarea><button type="button" class="place-save">保存修改</button><button type="button" class="place-resolve">${place.resolved ? '更新高德位置' : '查询高德位置'}</button><button type="button" class="place-map">在地图中查看</button><button type="button" class="place-delete">删除地点</button></article>`).join('') : '<p class="hint">没有符合条件的地点。</p>';
+  const placeTypes = placeTypeOptionsHtml();
+  places.innerHTML = visibleLocations.length ? visibleLocations.map(place => `<article class="place-card${selectedPlaceIds.has(place.id) ? ' selected' : ''}" data-place-id="${place.id}"><div><input type="checkbox" class="place-select" aria-label="选择 ${escapeHtml(place.name || '未命名地点')}" ${selectedPlaceIds.has(place.id) ? 'checked' : ''}><span class="place-type type-${escapeHtml(place.type || 'spot')}" style="background:${placeTypeColor(place.type)}22;color:${placeTypeColor(place.type)}">${escapeHtml(placeTypeName(place.type))}</span><b>${escapeHtml(place.name || '未命名地点')}</b></div><select class="place-type-select">${placeTypes}</select><input class="place-name" value="${escapeHtml(place.name || '')}" placeholder="景点、地名、酒店、餐厅等名称"><input class="place-address" value="${escapeHtml(place.address || '')}" placeholder="具体地址待定可留空">${place.photo ? `<img class="place-photo-preview" src="${escapeHtml(place.photo)}" alt="${escapeHtml(place.name || '地点')}图片">` : '<div class="place-photo-placeholder">暂未上传地点图片</div>'}<label class="place-photo-action">${place.photo ? '更换图片' : '上传图片'}<input class="place-photo-input" type="file" accept="image/*"></label>${place.resolved ? `<small class="resolved-place">高德：${escapeHtml(place.resolved.name)} · ${escapeHtml(place.resolved.address)}<br>${escapeHtml(place.resolved.location)}</small>` : '<small class="hint">尚未查询高德位置</small>'}<textarea class="place-note" placeholder="备注">${escapeHtml(place.note || '')}</textarea><button type="button" class="place-save">保存修改</button><button type="button" class="place-resolve">${place.resolved ? '更新高德位置' : '查询高德位置'}</button><button type="button" class="place-map">在地图中查看</button><button type="button" class="place-delete">删除地点</button></article>`).join('') : '<p class="hint">没有符合条件的地点。</p>';
   places.querySelectorAll('.place-card').forEach(card => {
     $('.place-type-select', card).value = state.locations.find(item => item.id === card.dataset.placeId)?.type || 'spot';
     $('.place-select', card).onchange = event => { event.target.checked ? selectedPlaceIds.add(card.dataset.placeId) : selectedPlaceIds.delete(card.dataset.placeId); card.classList.toggle('selected', event.target.checked); };
@@ -869,7 +892,7 @@ function queueLocalFileSave() {
     } catch { $('#fileSaveStatus').textContent = '本地文件写入失败'; }
   }, 300);
 }
-function currentSnapshot() { return { name: $('#tripName').value, items: [...itemsEl.children].map(values), schedule: state.schedule, locations: state.locations, routes: state.routes, preferences: state.preferences, placeModelVersion: 1, routeLinkModeVersion: 1, planKey: state.versionKey, updatedAt: new Date().toISOString() }; }
+function currentSnapshot() { return { name: $('#tripName').value, items: [...itemsEl.children].map(values), schedule: state.schedule, locations: state.locations, routes: state.routes, placeCategories: state.placeCategories, preferences: state.preferences, placeModelVersion: 1, routeLinkModeVersion: 1, planKey: state.versionKey, updatedAt: new Date().toISOString() }; }
 function save(){
   if (isShareMode) return;
   writeSharedSchedule(); const snapshot = currentSnapshot(); localStorage.setItem(universalLocationStorageKey, JSON.stringify(state.locations)); localStorage.setItem(universalRouteStorageKey, JSON.stringify(state.routes)); localStorage.setItem('roadtrip', JSON.stringify(snapshot)); localStorage.setItem(versionStorageKey(state.versionKey), JSON.stringify(snapshot)); queueLocalFileSave();
@@ -1160,7 +1183,7 @@ function renderMapRouteLegend(date) {
     const place = state.locations.find(item => item.id === event.locationId);
     return [place?.type || event.type];
   }).filter(Boolean).map(mapDisplayType))];
-  mapRouteLegend.innerHTML = `<b>${activeDate ? `${escapeHtml(activeDate)} 地点类别` : '地点类别'}</b>${placeTypes.map(type => `<div><i style="background:${markerColors[type] || markerColors.spot}"></i>${escapeHtml(mapDisplayTypeName(type))}</div>`).join('')}<small>点位颜色按地点库类别显示。</small>`;
+  mapRouteLegend.innerHTML = `<b>${activeDate ? `${escapeHtml(activeDate)} 地点类别` : '地点类别'}</b>${placeTypes.map(type => `<div><i style="background:${placeTypeColor(type)}"></i>${escapeHtml(mapDisplayTypeName(type))}</div>`).join('')}<small>点位颜色按地点库类别显示。</small>`;
   mapRouteLegend.hidden = !placeTypes.length;
 }
 async function showDayOverview(date) {
@@ -1333,7 +1356,7 @@ function load(rawData, versionKey = rawData.planKey || defaultPlanId) {
     if (normalized.type === 'drive') delete normalized.locationId;
     return normalized;
   }));
-  state.locations = data.locations || []; state.routes = data.routes || [];
+  state.locations = data.locations || []; state.routes = data.routes || []; state.placeCategories = (data.placeCategories || []).filter(category => category?.id && category?.name).map(category => ({ id: category.id, name: category.name, color: normalizeCategoryColor(category.color) }));
   state.schedule.forEach(event => {
     const links = event.routeLinks;
     if (event.type !== 'drive' || !links) return;
@@ -1823,7 +1846,7 @@ function renderWaypointOrder() {
   container.innerHTML = editorWaypointOrder.map((id, index) => {
     const place = state.locations.find(item => item.id === id);
     const option = [...($('#routeWaypoints')?.options || [])].find(item => item.value === id);
-    const label = place ? `${typeNames[place.type] || '地点'} · ${place.name || '未命名地点'}` : (option?.textContent || '未命名地点');
+    const label = place ? `${placeTypeName(place.type)} · ${place.name || '未命名地点'}` : (option?.textContent || '未命名地点');
     if (!place && !option) return '';
     return `<div class="waypoint-order-item" data-waypoint-id="${escapeHtml(id)}"><b>${index + 1}</b><span>${escapeHtml(label)}</span><button type="button" data-waypoint-move="up" ${index === 0 ? 'disabled' : ''}>上移</button><button type="button" data-waypoint-move="down" ${index === editorWaypointOrder.length - 1 ? 'disabled' : ''}>下移</button><button type="button" data-waypoint-move="remove">移除</button></div>`;
   }).join('');
@@ -1847,7 +1870,7 @@ $('#addRouteWaypoint').onclick = async () => {
   const place = await confirmNewPlace({ type: 'geography', fromEvent: true });
   if (!place) return;
   const select = $('#routeWaypoints');
-  if (![...select.options].some(option => option.value === place.id)) select.append(new Option(`${typeNames[place.type] || '地点'} · ${place.name || '未命名地点'}`, place.id));
+  if (![...select.options].some(option => option.value === place.id)) select.append(new Option(`${placeTypeName(place.type)} · ${place.name || '未命名地点'}`, place.id));
   select.value = place.id;
   if (!editorWaypointOrder.includes(place.id)) editorWaypointOrder.push(place.id);
   renderWaypointOrder();
@@ -1872,7 +1895,7 @@ function openScheduleEditor(index, isNew = false) {
   const item = node ? values(node) : { type: entry.type || 'spot', address: entry.address || '' };
   $('#editorDate').value = entry.date; $('#editorStart').value = entry.start; $('#editorEnd').value = entry.end || ''; $('#editorName').value = entry.title; $('#editorNote').value = entry.detail || ''; $('#editorAddress').value = item.address || ''; $('#editorType').value = item.type || 'spot';
   renderEditorPriceItems(entry.priceInfo);
-  const placeOptions = state.locations.map(place => `<option value="${place.id}">${typeNames[place.type] || '地点'} · ${escapeHtml(place.name || '未命名地点')}${place.address ? '' : '（地址待定）'}</option>`).join('');
+  const placeOptions = state.locations.map(place => `<option value="${place.id}">${escapeHtml(placeTypeName(place.type))} · ${escapeHtml(place.name || '未命名地点')}${place.address ? '' : '（地址待定）'}</option>`).join('');
   $('#editorPlaceList').innerHTML = state.locations.map(place => `<option value="${escapeHtml(`${place.name || ''}${place.address ? ` · ${place.address}` : ''}`)}"></option>`).join('');
   $('#eventLocation').innerHTML = `<option value="">暂不关联地点</option>${placeOptions}`;
   $('#eventLocation').value = entry.locationId || '';
@@ -2035,7 +2058,7 @@ $('#resolveEditorPlace').onclick = async event => {
     }
     if (normalizePlaceLookup(place.name) === normalizePlaceLookup(name)) place.name = suggestedPlaceName(address, place.resolved?.name, place.name);
     entry.locationId = place.id; entry.address = '';
-    if (![...$('#eventLocation').options].some(option => option.value === place.id)) $('#eventLocation').append(new Option(`${typeNames[place.type] || '地点'} · ${place.name}`, place.id));
+    if (![...$('#eventLocation').options].some(option => option.value === place.id)) $('#eventLocation').append(new Option(`${placeTypeName(place.type)} · ${place.name}`, place.id));
     $('#eventLocation').value = place.id; save(); renderLocations(); renderSchedule(state.schedule); updateNodeFromSchedule(index); focusScheduleEvent(index);
     button.textContent = '已关联高德位置';
   } catch (error) { alert(error.message || '高德暂时无法查询这个地点。'); button.textContent = '重新查询高德位置'; }
@@ -2059,7 +2082,7 @@ $('#resolveEditorRoute').onclick = async event => {
     }
     if (!origin.address || !destination.address) throw new Error('起点和终点必须先填写详细地址。');
     [[$('#routeOrigin'), origin], [$('#routeDestination'), destination]].forEach(([select, place]) => {
-      if (![...select.options].some(option => option.value === place.id)) select.append(new Option(`${typeNames[place.type] || '地点'} · ${place.name}`, place.id));
+      if (![...select.options].some(option => option.value === place.id)) select.append(new Option(`${placeTypeName(place.type)} · ${place.name}`, place.id));
       select.value = place.id;
     });
     const viaPlaceIds = [...editorWaypointOrder];
@@ -2166,6 +2189,24 @@ $('#addPlaceBtn').onclick = async () => {
   const place = await confirmNewPlace({ type: placeTypeFilter || 'spot' });
   if (!place) return;
   $(`.place-card[data-place-id="${place.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+$('#addPlaceCategoryBtn').onclick = () => {
+  $('#placeCategoryEditorForm').reset();
+  $('#newPlaceCategoryColor').value = '#2f73a9';
+  placeCategoryEditor.showModal();
+  requestAnimationFrame(() => $('#newPlaceCategoryName').focus());
+};
+$('#placeCategoryEditorCancel').onclick = () => placeCategoryEditor.close();
+placeCategoryEditor.oncancel = event => { event.preventDefault(); placeCategoryEditor.close(); };
+$('#placeCategoryEditorForm').onsubmit = event => {
+  event.preventDefault();
+  const name = $('#newPlaceCategoryName').value.trim();
+  if (!name) { $('#newPlaceCategoryName').focus(); return; }
+  if (customPlaceCategories().some(category => category.name === name)) { alert('当前计划已经有同名地点类别。'); return; }
+  const category = { id: `custom-${crypto.randomUUID().slice(0, 8)}`, name, color: normalizeCategoryColor($('#newPlaceCategoryColor').value) };
+  state.placeCategories.push(category);
+  save(); renderLocations(); showDayOverview(state.dayFilter);
+  placeCategoryEditor.close();
 };
 function cancelPlaceConfirmation() {
   placeEditor.close();
@@ -2287,7 +2328,7 @@ $('#planForm', planDialog).onsubmit = event => {
     const id = planIdFromName(name);
     const snapshot = planDialogMode === 'copy'
       ? { ...structuredClone(currentSnapshot()), name, planKey: id, updatedAt: new Date().toISOString() }
-      : { name, items: [], schedule: [], locations: structuredClone(state.locations), routes: structuredClone(state.routes), preferences: structuredClone(state.preferences), placeModelVersion: 1, routeLinkModeVersion: 1, planKey: id };
+      : { name, items: [], schedule: [], locations: structuredClone(state.locations), routes: structuredClone(state.routes), placeCategories: [], preferences: structuredClone(state.preferences), placeModelVersion: 1, routeLinkModeVersion: 1, planKey: id };
     state.plans.push({ id, name }); state.versionKey = id; localStorage.setItem(versionStorageKey(id), JSON.stringify(snapshot)); renderPlanSelect(); load(snapshot, id);
     snapshot.schedule.length ? renderSchedule(state.schedule) : renderManualSchedule();
   }
