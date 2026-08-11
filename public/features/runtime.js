@@ -2671,9 +2671,16 @@ function renderRouteTotals(showDetail = false) {
 }
 $('#routeBtn').onclick = () => {
   const detail = $('#routeSummaryDetail');
-  if (!detail.hidden) { detail.hidden = true; return; }
+  const button = $('#routeBtn');
+  if (!detail.hidden) {
+    detail.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+    return;
+  }
   renderRouteTotals(true);
+  button.setAttribute('aria-expanded', 'true');
 };
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.route-stat{min-width:0!important}.route-metric{min-width:0;display:grid;grid-template-columns:auto auto;justify-content:end;align-items:baseline;column-gap:7px}.route-metric small{grid-column:1/-1;min-width:0;max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.route-summary-btn{display:inline-flex!important;align-items:center;gap:4px;flex:0 0 auto}.route-summary-btn span{font-size:12px;line-height:1;transition:transform .16s ease}.route-summary-btn[aria-expanded="true"] span{transform:rotate(180deg)}@media(min-width:981px){main:has(#routeSummaryDetail:not([hidden])){grid-template-rows:194px minmax(0,1fr)!important}main:has(#routeSummaryDetail:not([hidden]))>header{height:194px!important;align-items:start!important;padding-top:10px!important}.hero:has(#routeSummaryDetail:not([hidden])){align-self:start!important}.hero .route-summary-detail{max-height:118px!important}}@media(max-width:980px){.route-stat{width:100%;justify-content:space-between!important}.route-metric{justify-content:start}.route-metric small{max-width:min(58vw,330px)}}' }));
 async function initializePlanner() {
   let cached = isShareMode ? null : localStorage.getItem('roadtrip');
   setPlanCatalog({});
