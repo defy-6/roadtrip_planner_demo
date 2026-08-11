@@ -1178,13 +1178,15 @@ function renderMapRouteLegend(date) {
   const activeDate = date || state.schedule[state.selectedIndex]?.date || '';
   const activeEvents = state.schedule.filter(event => !activeDate || event.date === activeDate);
   const placeTypes = [...new Set(activeEvents.flatMap(event => {
-    if (event.type === 'drive') return ['drive'];
+    if (event.type === 'drive') return [];
     if (event.type === 'flight') return ['flight'];
     const place = state.locations.find(item => item.id === event.locationId);
     return [place?.type || event.type];
   }).filter(Boolean).map(mapDisplayType))];
-  mapRouteLegend.innerHTML = `<b>${activeDate ? `${escapeHtml(activeDate)} 地点类别` : '地点类别'}</b>${placeTypes.map(type => `<div><i style="background:${placeTypeColor(type)}"></i>${escapeHtml(mapDisplayTypeName(type))}</div>`).join('')}<small>点位颜色按地点库类别显示。</small>`;
-  mapRouteLegend.hidden = !placeTypes.length;
+  const driveCount = activeEvents.filter(event => event.type === 'drive').length;
+  const routeLegend = driveCount ? `<div><i class="route-legend-swatch" style="background:${routeColorForDate(activeDate)}"></i>路程${driveCount > 1 ? `（${driveCount} 段）` : ''}</div>` : '';
+  mapRouteLegend.innerHTML = `<b>${activeDate ? `${escapeHtml(activeDate)} 图例` : '地图图例'}</b>${routeLegend}${placeTypes.map(type => `<div><i style="background:${placeTypeColor(type)}"></i>${escapeHtml(mapDisplayTypeName(type))}</div>`).join('')}<small>路程颜色与地图对应；点位颜色按地点库类别显示。</small>`;
+  mapRouteLegend.hidden = !(driveCount || placeTypes.length);
 }
 async function showDayOverview(date) {
   const requestId = ++dayOverviewRequestId;
