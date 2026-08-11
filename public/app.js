@@ -2292,7 +2292,7 @@ function drawLeafletLayerToCanvas(context, layer, scale) {
 function drawMapExportLegend(context, scale) {
   const dates = [...new Set(state.schedule.filter(event => event.type === 'drive' && event.date).map(event => event.date))].sort();
   const rows = dates.map(date => ({ label: date, color: routeColorForDate(date) }));
-  rows.push({ label: '地点（按地点类型着色）', color: markerColors.spot }, { label: '航班（浅黄色弧线）', color: markerColors.flight });
+  rows.push({ label: '地点（按地点类型着色）', color: markerColors.spot, marker: true }, { label: '机场 / 航班', color: markerColors.flight, marker: true });
   if (!rows.length) return;
   const padding = 10 * scale, lineHeight = 16 * scale, width = 176 * scale, height = padding * 2 + rows.length * lineHeight;
   context.save();
@@ -2301,8 +2301,14 @@ function drawMapExportLegend(context, scale) {
   context.font = `${10 * scale}px system-ui`; context.textBaseline = 'middle'; context.fillStyle = '#315540';
   rows.forEach((row, index) => {
     const y = 12 * scale + padding + index * lineHeight + lineHeight / 2;
-    context.strokeStyle = row.color; context.lineWidth = (index < dates.length ? 3.2 : 5) * scale; context.lineCap = 'round';
-    context.beginPath(); context.moveTo(22 * scale, y); context.lineTo(46 * scale, y); context.stroke();
+    if (row.marker) {
+      context.fillStyle = row.color;
+      context.beginPath(); context.arc(34 * scale, y, 4 * scale, 0, Math.PI * 2); context.fill();
+      context.strokeStyle = '#fff'; context.lineWidth = scale; context.stroke();
+    } else {
+      context.strokeStyle = row.color; context.lineWidth = 3.2 * scale; context.lineCap = 'round';
+      context.beginPath(); context.moveTo(22 * scale, y); context.lineTo(46 * scale, y); context.stroke();
+    }
     context.fillText(row.label, 54 * scale, y);
   });
   context.restore();
