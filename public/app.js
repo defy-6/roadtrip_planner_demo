@@ -65,10 +65,13 @@ let pendingEditorRoute = null;
 const selectedPlaceIds = new Set();
 let placeSearchText = '';
 let placeTypeFilter = '';
-const markerColors = { spot: '#1d6b4f', geography: '#0f766e', food: '#d97706', hotel: '#8750ad', drive: '#2f73a9', flight: '#d4a72c', transport: '#506fb4', service: '#26877b', fuel: '#9a58bc', supply: '#64748b' };
+const markerColors = { spot: '#1d6b4f', geography: '#0f766e', food: '#d97706', hotel: '#8750ad', drive: '#2f73a9', flight: '#d4a72c', transport: '#d4a72c', service: '#64748b', fuel: '#64748b', supply: '#64748b' };
 const typeNames = { spot: '景点', geography: '地名', food: '饮食', hotel: '住宿', drive: '路程', flight: '机场', transport: '交通', service: '服务区', fuel: '加油站', supply: '补给' };
+// 地点库保留细分类，地图图例按更易读的出行类别合并。
+const mapDisplayType = type => ['flight', 'transport'].includes(type) ? 'transport' : ['service', 'fuel', 'supply'].includes(type) ? 'supply' : type;
+const mapDisplayTypeName = type => ({ transport: '交通', supply: '补给' }[mapDisplayType(type)] || typeNames[type] || type);
 function mapPointStyle(type, options = {}) {
-  const color = markerColors[type] || markerColors.spot;
+  const color = markerColors[mapDisplayType(type)] || markerColors.spot;
   return { radius: 3.5, color, weight: 1.3, fillColor: color, fillOpacity: .95, ...options };
 }
 const eventTypeNames = { spot: '游玩', food: '用餐', hotel: '入住 / 休息', drive: '路程', flight: '航班', transport: '交通 / 手续', service: '服务区停靠', fuel: '加油 / 采购', supply: '补给' };
@@ -1152,8 +1155,8 @@ function renderMapRouteLegend(date) {
     if (event.type === 'flight') return ['flight'];
     const place = state.locations.find(item => item.id === event.locationId);
     return [place?.type || event.type];
-  }).filter(Boolean))];
-  mapRouteLegend.innerHTML = `<b>${activeDate ? `${escapeHtml(activeDate)} 地点类别` : '地点类别'}</b>${placeTypes.map(type => `<div><i style="background:${markerColors[type] || markerColors.spot}"></i>${escapeHtml(typeNames[type] || eventTypeNames[type] || type)}</div>`).join('')}<small>点位颜色按地点库类别显示。</small>`;
+  }).filter(Boolean).map(mapDisplayType))];
+  mapRouteLegend.innerHTML = `<b>${activeDate ? `${escapeHtml(activeDate)} 地点类别` : '地点类别'}</b>${placeTypes.map(type => `<div><i style="background:${markerColors[type] || markerColors.spot}"></i>${escapeHtml(mapDisplayTypeName(type))}</div>`).join('')}<small>点位颜色按地点库类别显示。</small>`;
   mapRouteLegend.hidden = !placeTypes.length;
 }
 async function showDayOverview(date) {
