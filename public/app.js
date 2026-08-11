@@ -47,6 +47,7 @@ let dayOverviewLayer;
 let dayOverviewRequestId = 0;
 let dayOverviewBounds;
 let mapFocusDate = '';
+let renderedOverviewDate = null;
 let mapRouteLegend;
 const selectedScheduleIndexes = new Set();
 let scheduleSelectionMode = true;
@@ -1289,6 +1290,7 @@ async function showDayOverview(date) {
     map.fitBounds(dayOverviewBounds, { padding: [38, 38], maxZoom: 12 });
   }
   $('#distance').textContent = `${date ? `${date} · ` : '全程 · '}已显示 ${places.filter(place => resolved.has(place.id)).length + customPointEntries.filter(point => resolved.has(point.key)).length} 个地点 · ${displayedRouteCount} 条线路`;
+  if (requestId === dayOverviewRequestId) renderedOverviewDate = date || '';
 }
 function load(rawData, versionKey = rawData.planKey || defaultPlanId) {
   const data = migrateFlightStopovers(repairEventNamedLocations(mergeUniversalRoutes(mergeUniversalLocations(migrateExplicitRouteLinks(migrateToPlaceModel(migrateLegacyLocations(clearInitialPendingAddresses(migrateToUnifiedItems(rawData)))))))));
@@ -1666,15 +1668,14 @@ async function showDriveSegment(index) {
   const waypoints = (links.viaPlaceIds || []).map(placeId => state.locations.find(place => place.id === placeId)).filter(place => place?.address);
   const stops = [origin, ...waypoints, destination].filter(Boolean);
   if (!origin || !destination) { $('#routeDetail').textContent = '该路程尚未明确设置起点和终点。请点击“编辑事件 / 关联地点”，从地点库选择或自定义填写。'; return; }
-  if (isShareMode) {
-    const record = sharedRoute?.amap;
-    if (!record?.steps?.length) { showSavedDriveInfo(entry); return null; }
+  const record = sharedRoute?.amap;
+  if (record?.steps?.length) {
     const locations = stops.map(stop => stop.resolved?.location).filter(Boolean);
-    if (locations.length < 2) { showSavedDriveInfo(entry); return null; }
     showRouteOnMap(record, locations, stops.map(stop => ({ ...stop, name: stop.title || stop.name })), { name: sharedRoute?.name || entry.title, routeId: sharedRoute?.id, amap: record });
     showSavedDriveInfo(entry);
     return record;
   }
+  if (isShareMode) { showSavedDriveInfo(entry); return null; }
   return calculateDriveRoute(stops, sharedRoute, entry.title, false);
 }
 async function calculateDriveRoute(stops, sharedRoute, routeName, persist = true) {
@@ -1711,7 +1712,8 @@ async function focusScheduleEvent(index, { skipDriveQuery = false } = {}) {
   mapFocusDate = entry.date || '';
   const node = [...itemsEl.children].find(item => Number(item.dataset.scheduleIndex) === index);
   document.querySelectorAll('.calendar-block').forEach(block => block.classList.toggle('selected', Number(block.dataset.scheduleIndex) === index));
-  await showDayOverview(entry.date);
+  // 当天总览已存在时不重建所有点线，卡片切换仅更新高亮图层。
+  if (renderedOverviewDate !== (entry.date || '')) await showDayOverview(entry.date);
   if (state.selectedIndex !== index) return;
   $('#mapDayFilter').value = entry.date;
   if (entry.type === 'flight') {
