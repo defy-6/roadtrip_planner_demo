@@ -95,7 +95,7 @@ $('#editorForm').insertBefore(routeEditorSection, $('.editor-actions'));
 const eventLocationField = document.createElement('label');
 eventLocationField.id = 'eventLocationField';
 eventLocationField.innerHTML = '关联地点<input id="eventLocationSearch" list="editorPlaceList" placeholder="搜索地点名称或地址"><select id="eventLocation" style="display:none"><option value="">暂不关联地点</option></select><button type="button" id="resolveEditorPlace">查询高德位置并关联</button><datalist id="editorPlaceList"></datalist>';
-$('#editorForm').insertBefore(eventLocationField, routeLinkFields);
+$('#editorForm').insertBefore(eventLocationField, routeEditorSection);
 const flightFields = document.createElement('div');
 flightFields.id = 'flightFields'; flightFields.className = 'editor-grid'; flightFields.hidden = true;
 flightFields.innerHTML = '<label>航班号<input id="editorFlightNumber" placeholder="例如：CZ6825"></label><label>到达日期<input id="editorFlightArrivalDate" type="date"></label><label>起飞机场<input id="editorFlightDeparture" placeholder="例如：广州白云机场"></label><label>降落机场<input id="editorFlightArrival" placeholder="例如：伊宁机场"></label><label>出发航站楼<input id="editorFlightDepartureTerminal" placeholder="可留空"></label><label>到达航站楼<input id="editorFlightArrivalTerminal" placeholder="可留空"></label><label>经停机场<input id="editorFlightStopoverAirport" placeholder="可选，例如：郑州新郑国际机场"></label><label>经停到达<input id="editorFlightStopoverArrivalTime" type="time" step="300"></label><label>经停起飞<input id="editorFlightStopoverDepartureTime" type="time" step="300"></label>';
