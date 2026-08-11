@@ -1,0 +1,5 @@
+node_modules/
+.env
+.cache/
+data/roadtrip-data.json
+data/roadtrip-data.json.tmp
