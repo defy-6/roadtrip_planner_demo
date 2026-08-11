@@ -87,7 +87,11 @@ $('#editorAddress').placeholder = '具体地址待定可留空，填写后可定
 const routeLinkFields = document.createElement('div');
 routeLinkFields.id = 'routeLinkFields'; routeLinkFields.className = 'editor-grid';
 routeLinkFields.innerHTML = '<label style="grid-column:1 / -1">关联通用路线<select id="routeLibrarySelect"><option value="">新建路线 / 暂不选择</option></select></label><label style="grid-column:1 / -1">出行方式 / 驾车策略<select id="routeTravelMode"><option value="recommended">自驾 · 高德推荐</option><option value="highway">自驾 · 高速优先</option><option value="fastest">自驾 · 速度最快</option><option value="lowToll">自驾 · 少收费</option><option value="avoidHighway">自驾 · 不走高速</option><option value="mainRoad">自驾 · 大路优先</option></select><small class="hint">当前路程模块使用高德驾车路径；更改策略后点击“获取高德路线”再保存。</small></label><label>起点地点<input id="routeOriginSearch" list="editorPlaceList" placeholder="搜索地点名称或地址"><select id="routeOrigin" style="display:none"></select></label><label>终点地点<input id="routeDestinationSearch" list="editorPlaceList" placeholder="搜索地点名称或地址"><select id="routeDestination" style="display:none"></select></label><label>自定义起点名称<input id="routeOriginName" placeholder="例如：伊宁市区酒店"></label><label>自定义起点地址<input id="routeOriginAddress" placeholder="选择地点后可留空"></label><label>自定义终点名称<input id="routeDestinationName" placeholder="例如：赛里木湖东门"></label><label>自定义终点地址<input id="routeDestinationAddress" placeholder="选择地点后可留空"></label><label style="grid-column:1 / -1">途经地点（从地点库勾选后可排序）<select id="routeWaypoints" multiple size="4"></select></label><button type="button" id="addRouteWaypoint" class="ghost" style="grid-column:1 / -1">+ 新增途经地点</button><div id="routeWaypointOrder" class="waypoint-order" aria-label="途经点顺序"></div><div id="editorRouteStatus" class="resolved-place" style="grid-column:1 / -1" hidden></div><button type="button" id="resolveEditorRoute" style="grid-column:1 / -1">获取高德路线</button>';
-$('#editorForm').insertBefore(routeLinkFields, $('.editor-actions'));
+const routeEditorSection = document.createElement('details');
+routeEditorSection.id = 'routeEditorSection'; routeEditorSection.className = 'editor-section route-editor-section'; routeEditorSection.open = true;
+routeEditorSection.innerHTML = '<summary><span>路线设置</span><small>起终点、途经点与高德路线</small></summary>';
+routeEditorSection.append(routeLinkFields);
+$('#editorForm').insertBefore(routeEditorSection, $('.editor-actions'));
 const eventLocationField = document.createElement('label');
 eventLocationField.id = 'eventLocationField';
 eventLocationField.innerHTML = '关联地点<input id="eventLocationSearch" list="editorPlaceList" placeholder="搜索地点名称或地址"><select id="eventLocation" style="display:none"><option value="">暂不关联地点</option></select><button type="button" id="resolveEditorPlace">查询高德位置并关联</button><datalist id="editorPlaceList"></datalist>';
@@ -102,11 +106,19 @@ $('.editor-actions').prepend(editorDeleteButton);
 const priceFields = document.createElement('div');
 priceFields.id = 'priceFields'; priceFields.className = 'editor-grid';
 priceFields.innerHTML = '<div style="grid-column:1 / -1"><b>单人费用 × 人数</b><small class="hint">可分别填写成人票、学生票、儿童票等不同单价。</small><div id="editorPerPersonPrices"></div><button type="button" class="ghost" data-add-price="person">+ 单人费用</button></div><div style="grid-column:1 / -1"><b>共同费用</b><small class="hint">适用于大家一起的餐饮、酒店、停车、整车费用等。</small><div id="editorSharedPrices"></div><button type="button" class="ghost" data-add-price="shared">+ 共同费用</button></div><div id="editorPriceTotal" class="hint" style="align-self:end;padding-bottom:7px;grid-column:1 / -1"></div>';
-$('#editorForm').insertBefore(priceFields, $('.editor-actions'));
+const priceEditorSection = document.createElement('details');
+priceEditorSection.id = 'priceEditorSection'; priceEditorSection.className = 'editor-section';
+priceEditorSection.innerHTML = '<summary><span>费用与预算</span><small>门票、餐饮、住宿与共同费用</small></summary>';
+priceEditorSection.append(priceFields);
+$('#editorForm').insertBefore(priceEditorSection, $('.editor-actions'));
 const weatherFields = document.createElement('div');
 weatherFields.id = 'editorWeatherFields';
 weatherFields.innerHTML = '<div id="editorWeatherStatus" class="resolved-place" hidden></div><button type="button" id="queryEditorWeather" class="ghost">查询天气</button><small>普通事件按关联地点和开始时间查询；路程按起点开始、终点结束时刻查询；航班按起飞与到达机场的对应时刻查询。</small>';
-$('#editorForm').insertBefore(weatherFields, $('.editor-actions'));
+const weatherEditorSection = document.createElement('details');
+weatherEditorSection.id = 'weatherEditorSection'; weatherEditorSection.className = 'editor-section';
+weatherEditorSection.innerHTML = '<summary><span>天气信息</span><small>按行程日期与时刻查询</small></summary>';
+weatherEditorSection.append(weatherFields);
+$('#editorForm').insertBefore(weatherEditorSection, $('.editor-actions'));
 function normalizedPriceItems(info = {}) {
   if (info.perPersonItems || info.sharedItems) return { perPersonItems: info.perPersonItems || [], sharedItems: info.sharedItems || [] };
   const perPersonItems = info.ticketPrice ? [{ amount: info.ticketPrice, people: info.people || 1, note: '门票' }] : [];
@@ -1804,7 +1816,8 @@ function updateEditorRouteQueryState(route) {
 }
 function updateEditorFieldVisibility() {
   const type = $('#editorType').value, isDrive = type === 'drive', isFlight = type === 'flight';
-  routeLinkFields.hidden = !isDrive;
+  routeEditorSection.hidden = !isDrive;
+  if (isDrive) routeEditorSection.open = true;
   flightFields.hidden = !isFlight;
   eventLocationField.hidden = isDrive || isFlight;
   weatherFields.hidden = false;
