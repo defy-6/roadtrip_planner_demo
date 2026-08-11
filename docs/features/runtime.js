@@ -1748,7 +1748,7 @@ async function calculateDriveRoute(stops, sharedRoute, routeName, persist = true
     showRouteOnMap(path, geos.map(item => item.location), stops.map(item => ({ ...item, name: item.title || item.name })), { name: sharedRoute?.name || routeName, routeId: sharedRoute?.id, amap: amapRecord });
     const tollText = transport === 'driving' ? `，过路费约 ${path.tolls.toFixed(0)} 元${path.tollDistance ? `（收费路段 ${(path.tollDistance / 1000).toFixed(1)} 公里）` : ''}` : '';
     const notice = transport === 'driving' ? `高德普通驾车接口不能指定未来出发时刻；夜间封闭、季节管制和临时交通规则可能使查询路线绕行。这里的时间仅作最低参考，按当前“${escapeHtml(state.preferences.pace)}”节奏建议额外预留 ${buffer} 分钟，并在实际出发前重新导航确认。` : '该结果为高德当前可用方案参考，实际步行、骑行或公共交通请以出发时导航与班次为准。';
-    $('#routeDetail').innerHTML = `<b>${stops.map(stop => escapeHtml(stop.title || stop.name)).join(' → ')}</b><br>${escapeHtml(transport === 'driving' ? travel.label : transportModeMeta(transport).label)}：${(Number(path.distance) / 1000).toFixed(1)} 公里，预计 ${fmt(Number(path.duration))}${tollText}。<small>查询于 ${queriedAt.toLocaleString('zh-CN')}${transport === 'driving' && isNightQuery ? '（夜间查询）' : ''}。${notice}</small>`;
+    $('#routeDetail').innerHTML = `<b class="detail-title">${stops.map(stop => escapeHtml(stop.title || stop.name)).join(' → ')}</b><strong class="detail-key">${escapeHtml(transport === 'driving' ? travel.label : transportModeMeta(transport).label)} · ${(Number(path.distance) / 1000).toFixed(1)} 公里 · ${fmt(Number(path.duration))}${tollText}</strong><small class="detail-source">查询于 ${queriedAt.toLocaleString('zh-CN')}${transport === 'driving' && isNightQuery ? '（夜间查询）' : ''}。${notice}</small>`;
     if (sharedRoute && persist) { sharedRoute.amap = amapRecord; save(); renderRouteTotals(); }
     return path;
   } catch (error) { $('#routeDetail').textContent = error.message || '该路程暂时无法计算。'; }
@@ -1764,16 +1764,16 @@ function showSavedDriveInfo(entry) {
   const transportMode = normalizedTransportMode(links.transportMode || record.transportMode);
   const modeLabel = transportMode === 'driving' ? driveTravelMeta(links.travelMode || record.travelMode).label : transportModeMeta(transportMode).label;
   const tollText = transportMode === 'driving' ? ` · 过路费约 ${Number(record.tolls || 0).toFixed(0)} 元` : '';
-  $('#routeDetail').innerHTML = `<b>${escapeHtml(entry.title || title)}</b><br><span>${escapeHtml(entry.date || '')}${entry.start ? ` · ${escapeHtml(entry.start)}–${escapeHtml(entry.end || '')}` : ''}</span><br>${escapeHtml(modeLabel)}：${(Number(record.distance || 0) / 1000).toFixed(1)} 公里 · ${fmt(Number(record.duration || 0))}${tollText}。${entry.detail ? `<br><small>${escapeHtml(entry.detail)}</small>` : ''}<small>查询于 ${new Date(record.queriedAt).toLocaleString('zh-CN')}${transportMode === 'driving' && record.queryPeriod === 'night' ? '（夜间结果，建议白天重查）' : ''}；地图点击不会重新计算。</small>`;
+  $('#routeDetail').innerHTML = `<b class="detail-title">${escapeHtml(entry.title || title)}</b><span class="detail-meta">${escapeHtml(entry.date || '')}${entry.start ? ` · ${escapeHtml(entry.start)}–${escapeHtml(entry.end || '')}` : ''}</span><strong class="detail-key">${escapeHtml(modeLabel)} · ${(Number(record.distance || 0) / 1000).toFixed(1)} 公里 · ${fmt(Number(record.duration || 0))}${tollText}</strong>${entry.detail ? `<small class="detail-note">${escapeHtml(entry.detail)}</small>` : ''}<small class="detail-source">查询于 ${new Date(record.queriedAt).toLocaleString('zh-CN')}${transportMode === 'driving' && record.queryPeriod === 'night' ? '（夜间结果，建议白天重查）' : ''}；地图点击不会重新计算。</small>`;
 }
 function showEventDetail(entry, extra = '') {
   const place = state.locations.find(item => item.id === entry.locationId);
   const time = [entry.start, entry.end].filter(Boolean).join('–');
   const lines = [
-    `<b>${escapeHtml(entry.title || '未命名事件')}</b>`,
-    `<span>${escapeHtml(entry.date || '')}${time ? ` · ${escapeHtml(time)}` : ''} · ${escapeHtml(eventTypeNames[entry.type] || typeNames[entry.type] || '事件')}</span>`,
-    place?.name ? `<span>地点：${escapeHtml(place.name)}</span>` : '',
-    entry.detail ? `<small>${escapeHtml(entry.detail)}</small>` : '',
+    `<b class="detail-title">${escapeHtml(entry.title || '未命名事件')}</b>`,
+    `<span class="detail-meta">${escapeHtml(entry.date || '')}${time ? ` · ${escapeHtml(time)}` : ''} · ${escapeHtml(eventTypeNames[entry.type] || typeNames[entry.type] || '事件')}</span>`,
+    place?.name ? `<strong class="detail-key">地点 · ${escapeHtml(place.name)}</strong>` : '',
+    entry.detail ? `<small class="detail-note">${escapeHtml(entry.detail)}</small>` : '',
     extra
   ].filter(Boolean);
   $('#routeDetail').innerHTML = lines.join('<br>');
@@ -2681,6 +2681,7 @@ $('#routeBtn').onclick = () => {
   button.setAttribute('aria-expanded', 'true');
 };
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.route-stat{min-width:0!important}.route-metric{min-width:0;display:grid;grid-template-columns:auto auto;justify-content:end;align-items:baseline;column-gap:7px}.route-metric small{grid-column:1/-1;min-width:0;max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.route-summary-btn{display:inline-flex!important;align-items:center;gap:4px;flex:0 0 auto}.route-summary-btn span{font-size:12px;line-height:1;transition:transform .16s ease}.route-summary-btn[aria-expanded="true"] span{transform:rotate(180deg)}@media(min-width:981px){main:has(#routeSummaryDetail:not([hidden])){grid-template-rows:194px minmax(0,1fr)!important}main:has(#routeSummaryDetail:not([hidden]))>header{height:194px!important;align-items:start!important;padding-top:10px!important}.hero:has(#routeSummaryDetail:not([hidden])){align-self:start!important}.hero .route-summary-detail{max-height:118px!important}}@media(max-width:980px){.route-stat{width:100%;justify-content:space-between!important}.route-metric{justify-content:start}.route-metric small{max-width:min(58vw,330px)}}' }));
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.route-detail{display:flex!important;flex-direction:column;gap:4px;padding:13px 15px!important;font-size:13px!important;line-height:1.45!important}.route-detail .detail-title{font-size:16px!important;line-height:1.25!important;color:#173c32!important}.route-detail .detail-meta{font-size:12px!important;color:#587466!important}.route-detail .detail-key{align-self:flex-start;padding:4px 8px;border-radius:5px;background:#dcece1;color:#174f3d;font-size:13px!important;line-height:1.3!important}.route-detail .detail-note{font-size:12px!important;color:#365b4a;line-height:1.45!important}.route-detail .detail-source{font-size:10px!important;color:#70877b;line-height:1.35!important}@media(min-width:981px){.content>.map-panel .route-detail{min-height:142px!important;max-height:205px!important}}@media(max-width:980px){.route-detail{font-size:12px!important}.route-detail .detail-title{font-size:15px!important}.route-detail .detail-key{font-size:12px!important}}' }));
 async function initializePlanner() {
   let cached = isShareMode ? null : localStorage.getItem('roadtrip');
   setPlanCatalog({});
