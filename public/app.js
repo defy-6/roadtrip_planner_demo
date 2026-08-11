@@ -306,7 +306,24 @@ function gcjToWgs(lng, lat) {
 // 高德接口与高德底图均使用 GCJ-02；地图绘制不再转换为 WGS-84，避免点线与道路产生偏移。
 function mapCoords(lng, lat) { return useAmapBaseMap ? [lng, lat] : gcjToWgs(lng, lat); }
 
-function initMap() {
+async function ensureLeafletLibrary() {
+  if (window.L) return true;
+  const existing = document.querySelector('script[data-leaflet-fallback]');
+  if (existing) return new Promise(resolve => existing.addEventListener('load', () => resolve(Boolean(window.L)), { once: true }));
+  return new Promise(resolve => {
+    const script = document.createElement('script');
+    script.dataset.leafletFallback = 'true';
+    script.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
+    script.onload = () => resolve(Boolean(window.L));
+    script.onerror = () => resolve(false);
+    document.head.append(script);
+  });
+}
+async function initMap() {
+  if (!(await ensureLeafletLibrary())) {
+    $('#routeError').textContent = '地图组件加载失败，请检查网络后刷新页面。';
+    return false;
+  }
   map = L.map('map', { zoomControl: false }).setView([30.25, 120.16], 7);
   map.createPane('flightPane');
   map.getPane('flightPane').style.zIndex = 350;
@@ -331,6 +348,7 @@ function initMap() {
   document.querySelector('#map').classList.add('map-ready');
   document.head.append(Object.assign(document.createElement('style'), { textContent: '#map.map-ready:before,#map.map-ready:after{display:none}' }));
   $('.map-empty')?.remove();
+  return true;
 }
 
 function fitSelectionWithDayContext(selectionBounds, maxZoom = 12) {
@@ -526,7 +544,7 @@ async function ensureFlightAirportLinks() {
 async function showFlightOnMap(index) {
   const entry = state.schedule[index]; if (!entry?.flightInfo || !map) return;
   try {
-    await linkFlightAirports(entry);
+    if (!isShareMode) await linkFlightAirports(entry);
     const places = flightPlaces(entry);
     if (places.length < 2 || places.some(place => !place.resolved?.location)) throw new Error('机场位置尚未查询完成');
     if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
@@ -755,7 +773,10 @@ function updateNodeFromSchedule(index) {
   const place = state.locations.find(item => item.id === event.locationId); $('.place-query-name', node).value = place?.name || ''; $('.address', node).value = place?.address || event.address || '';
   const isDrive = event.type === 'drive', isFlight = event.type === 'flight'; $('.place-create', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.place-query-name', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.address', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.route-inline', node)?.toggleAttribute('hidden', !isDrive); fillInlineRouteControls(node, index); refreshNodePlaceLink(node, index);
 }
-function readSharedSchedule() { try { return JSON.parse(localStorage.getItem(sharedScheduleStorageKey) || '{}'); } catch { return {}; } }
+function readSharedSchedule() {
+  if (isShareMode) return structuredClone(shareData?.sharedSchedule || {});
+  try { return JSON.parse(localStorage.getItem(sharedScheduleStorageKey) || '{}'); } catch { return {}; }
+}
 function applySharedSchedule(entries) {
   const shared = readSharedSchedule();
   const applied = entries.map((event, index) => {
@@ -835,6 +856,7 @@ function migrateExplicitRouteLinks(data) {
   return { ...data, schedule, routeLinkModeVersion: 1, items: schedule.map((entry, scheduleIndex) => ({ type: entry.type || typeForTitle(entry.title), date: entry.date, startTime: entry.start, endTime: entry.end, name: entry.title, address: entry.address || '', note: entry.detail || '', photo: entry.photo || '', scheduleIndex })) };
 }
 function mergeUniversalLocations(data) {
+  if (isShareMode) return data;
   let universal = [];
   try { universal = JSON.parse(localStorage.getItem(universalLocationStorageKey) || '[]'); } catch { universal = []; }
   if (!Array.isArray(universal)) universal = [];
@@ -898,6 +920,7 @@ function upsertUniversalRoute(name, links) {
   return route;
 }
 function mergeUniversalRoutes(data) {
+  if (isShareMode) return data;
   let universal = [];
   try { universal = JSON.parse(localStorage.getItem(universalRouteStorageKey) || '[]'); } catch { universal = []; }
   if (!Array.isArray(universal)) universal = [];
@@ -1603,6 +1626,15 @@ async function showDriveSegment(index) {
   const waypoints = (links.viaPlaceIds || []).map(placeId => state.locations.find(place => place.id === placeId)).filter(place => place?.address);
   const stops = [origin, ...waypoints, destination].filter(Boolean);
   if (!origin || !destination) { $('#routeDetail').textContent = '该路程尚未明确设置起点和终点。请点击“编辑事件 / 关联地点”，从地点库选择或自定义填写。'; return; }
+  if (isShareMode) {
+    const record = sharedRoute?.amap;
+    if (!record?.steps?.length) { showSavedDriveInfo(entry); return null; }
+    const locations = stops.map(stop => stop.resolved?.location).filter(Boolean);
+    if (locations.length < 2) { showSavedDriveInfo(entry); return null; }
+    showRouteOnMap(record, locations, stops.map(stop => ({ ...stop, name: stop.title || stop.name })), { name: sharedRoute?.name || entry.title, routeId: sharedRoute?.id, amap: record });
+    showSavedDriveInfo(entry);
+    return record;
+  }
   return calculateDriveRoute(stops, sharedRoute, entry.title, false);
 }
 async function calculateDriveRoute(stops, sharedRoute, routeName, persist = true) {
@@ -1651,7 +1683,8 @@ async function focusScheduleEvent(index, { skipDriveQuery = false } = {}) {
   else if (entry.locationId && state.locations.find(place => place.id === entry.locationId)?.address) {
     const place = state.locations.find(item => item.id === entry.locationId);
     try {
-      const point = await geocode(place.address, place.name);
+      const point = place.resolved?.location ? place.resolved : (isShareMode ? null : await geocode(place.address, place.name));
+      if (!point?.location) { $('#routeDetail').innerHTML = `<b>${escapeHtml(entry.title)}</b><small>共享版本中尚未保存该地点坐标。</small>`; return; }
       if (state.selectedIndex !== index) return;
       const [lng, lat] = mapCoords(...point.location.split(',').map(Number));
       if (routeLayer) map.removeLayer(routeLayer);
@@ -2451,6 +2484,14 @@ async function initializePlanner() {
   let cached = isShareMode ? null : localStorage.getItem('roadtrip');
   const hydrate = fileData => {
     if (!fileData) return;
+    if (isShareMode) {
+      const activeKey = ['a', 'b'].includes(fileData.activeVersion) ? fileData.activeVersion : 'a';
+      const active = fileData.versions?.[activeKey];
+      if (active) cached = JSON.stringify(active);
+      const stamp = fileData.updatedAt ? new Date(fileData.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }) : '';
+      $('#fileSaveStatus').textContent = `共享只读版${stamp ? ` · 更新于 ${stamp}` : ''}`;
+      return;
+    }
     if (fileData.locations) localStorage.setItem(universalLocationStorageKey, JSON.stringify(fileData.locations));
     if (fileData.routes) localStorage.setItem(universalRouteStorageKey, JSON.stringify(fileData.routes));
     if (fileData.sharedSchedule) localStorage.setItem(sharedScheduleStorageKey, JSON.stringify(fileData.sharedSchedule));
@@ -2459,7 +2500,7 @@ async function initializePlanner() {
     const active = fileData.versions?.[activeKey];
     if (active) { cached = JSON.stringify(active); localStorage.setItem('roadtrip', cached); }
     const stamp = fileData.updatedAt ? new Date(fileData.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }) : '';
-    $('#fileSaveStatus').textContent = isShareMode ? `共享只读版${stamp ? ` · 更新于 ${stamp}` : ''}` : '已从本地文件载入';
+    $('#fileSaveStatus').textContent = '已从本地文件载入';
   };
   if (isShareMode) hydrate(shareData);
   else try {
@@ -2469,7 +2510,7 @@ async function initializePlanner() {
     const data = JSON.parse(cached); const inferredKey = ['a', 'b'].includes(data.planKey) ? data.planKey : (data.name?.includes('方案 B') ? 'b' : 'a');
     load(data, inferredKey); save(); state.schedule.length ? renderSchedule(state.schedule) : renderManualSchedule();
   } else loadPreset('a');
-  initMap();
+  await initMap();
   if (!isShareMode) await ensureFlightAirportLinks();
   await showDayOverview('');
   renderRouteTotals();
