@@ -98,7 +98,7 @@ app.get('/api/geocode', async (req, res) => {
 
 app.post('/api/route', async (req, res) => {
   try {
-    const { origin, destination, waypoints = [], strategy = '0' } = req.body;
+    const { origin, destination, waypoints = [], strategy = '32' } = req.body;
     if (!origin || !destination) throw new Error('起点和终点不能为空');
     const params = { origin, destination, strategy, show_fields: 'cost,polyline' };
     if (waypoints.length) params.waypoints = waypoints.join(';');
