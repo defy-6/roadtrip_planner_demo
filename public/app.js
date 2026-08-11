@@ -2208,30 +2208,46 @@ $('#planSelect').onchange = async e => {
   loadPreset(key);
   if (!isShareMode) await ensureFlightAirportLinks();
 };
-$('#newPlanBtn').onclick = () => {
+const planDialog = document.createElement('dialog');
+planDialog.className = 'event-editor';
+planDialog.innerHTML = '<form id="planForm" class="editor-form"><h3 id="planDialogTitle">新建计划</h3><p id="planDialogHint" class="hint"></p><label id="planNameField">计划名称<input id="planDialogName" required maxlength="60" autocomplete="off"></label><div class="editor-actions"><button type="button" id="planDialogCancel" class="ghost">取消</button><button type="submit" id="planDialogSubmit">确认</button></div></form>';
+document.body.append(planDialog);
+let planDialogMode = '';
+function openPlanDialog(mode) {
   if (isShareMode) return;
-  const name = prompt('新计划名称', '新建计划'); if (!name?.trim()) return;
-  const id = planIdFromName(name);
-  const snapshot = { name: name.trim(), items: [], schedule: [], locations: structuredClone(state.locations), routes: structuredClone(state.routes), preferences: structuredClone(state.preferences), placeModelVersion: 1, routeLinkModeVersion: 1, planKey: id };
-  state.plans.push({ id, name: snapshot.name }); state.versionKey = id;
-  localStorage.setItem(versionStorageKey(id), JSON.stringify(snapshot)); renderPlanSelect(); load(snapshot, id); renderManualSchedule(); save();
+  const plan = state.plans.find(item => item.id === state.versionKey);
+  planDialogMode = mode;
+  const title = $('#planDialogTitle', planDialog), hint = $('#planDialogHint', planDialog), field = $('#planNameField', planDialog), input = $('#planDialogName', planDialog), submit = $('#planDialogSubmit', planDialog);
+  const isDelete = mode === 'delete';
+  title.textContent = isDelete ? '确认删除计划' : mode === 'copy' ? '复制计划' : '新建计划';
+  hint.textContent = isDelete ? `此操作不可恢复。请输入“${plan?.name || ''}”以确认删除。` : mode === 'copy' ? '将完整复制当前计划的时间表、地点与路线。' : '新计划创建后可单独编辑，不会影响当前计划。';
+  field.firstChild.textContent = isDelete ? '确认计划名称' : '计划名称';
+  input.value = isDelete ? '' : mode === 'copy' ? `${plan?.name || '未命名计划'} 副本` : '新建计划';
+  input.placeholder = isDelete ? plan?.name || '' : '请输入计划名称'; submit.textContent = isDelete ? '确认删除' : mode === 'copy' ? '复制计划' : '创建计划';
+  planDialog.showModal(); input.focus(); input.select();
+}
+$('#planDialogCancel', planDialog).onclick = () => planDialog.close();
+$('#planForm', planDialog).onsubmit = event => {
+  event.preventDefault(); const name = $('#planDialogName', planDialog).value.trim(); const current = state.plans.find(item => item.id === state.versionKey);
+  if (!name) return;
+  if (planDialogMode === 'delete') {
+    if (!current || name !== current.name) { $('#planDialogHint', planDialog).textContent = '计划名称不匹配，请重新输入。'; return; }
+    localStorage.removeItem(versionStorageKey(current.id)); state.plans = state.plans.filter(item => item.id !== current.id); state.versionKey = state.plans[0].id;
+    renderPlanSelect(); const next = parseStoredJson(versionStorageKey(state.versionKey), null);
+    if (next) { load(next, state.versionKey); renderSchedule(state.schedule); } else loadPreset(state.versionKey);
+  } else {
+    const id = planIdFromName(name);
+    const snapshot = planDialogMode === 'copy'
+      ? { ...structuredClone(currentSnapshot()), name, planKey: id, updatedAt: new Date().toISOString() }
+      : { name, items: [], schedule: [], locations: structuredClone(state.locations), routes: structuredClone(state.routes), preferences: structuredClone(state.preferences), placeModelVersion: 1, routeLinkModeVersion: 1, planKey: id };
+    state.plans.push({ id, name }); state.versionKey = id; localStorage.setItem(versionStorageKey(id), JSON.stringify(snapshot)); renderPlanSelect(); load(snapshot, id);
+    snapshot.schedule.length ? renderSchedule(state.schedule) : renderManualSchedule();
+  }
+  planDialog.close(); save();
 };
-$('#copyPlanBtn').onclick = () => {
-  if (isShareMode) return;
-  const source = currentSnapshot(); const name = prompt('复制后的计划名称', `${source.name || '未命名计划'} 副本`); if (!name?.trim()) return;
-  const id = planIdFromName(name); const snapshot = { ...structuredClone(source), name: name.trim(), planKey: id, updatedAt: new Date().toISOString() };
-  state.plans.push({ id, name: snapshot.name }); state.versionKey = id;
-  localStorage.setItem(versionStorageKey(id), JSON.stringify(snapshot)); renderPlanSelect(); load(snapshot, id); renderSchedule(state.schedule); save();
-};
-$('#deletePlanBtn').onclick = () => {
-  if (isShareMode || state.plans.length <= 1) return;
-  const plan = state.plans.find(item => item.id === state.versionKey); if (!plan || !confirm(`确定删除计划“${plan.name}”吗？此操作不可恢复。`)) return;
-  if (prompt(`为确认删除，请输入计划名称：${plan.name}`) !== plan.name) { alert('计划名称不匹配，已取消删除。'); return; }
-  localStorage.removeItem(versionStorageKey(plan.id)); state.plans = state.plans.filter(item => item.id !== plan.id);
-  state.versionKey = state.plans[0].id; renderPlanSelect(); const next = parseStoredJson(versionStorageKey(state.versionKey), null);
-  if (next) { load(next, state.versionKey); renderSchedule(state.schedule); } else loadPreset(state.versionKey);
-  save();
-};
+$('#newPlanBtn').onclick = () => openPlanDialog('new');
+$('#copyPlanBtn').onclick = () => openPlanDialog('copy');
+$('#deletePlanBtn').onclick = () => { if (state.plans.length > 1) openPlanDialog('delete'); };
 const geocode = (address, keyword = '') => {
   const queryKeyword = amapKeywords[keyword] || keyword;
   const cacheKey = `${address}|${queryKeyword}`;
