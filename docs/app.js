@@ -38,7 +38,7 @@ document.head.append(Object.assign(document.createElement('link'), { rel: 'style
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.locations-panel{margin-top:18px;padding-top:16px;border-top:1px solid #e4e6df}.locations-panel h3{margin:0;font-size:15px}.places{display:grid;gap:9px;margin-top:10px}.place-card{display:grid;gap:6px;padding:10px;border:1px dashed #cdd9d0;border-radius:8px;background:#fbfdfb}.place-card>div{display:flex;align-items:center;gap:7px}.place-card b{font-size:13px}.place-type{padding:2px 5px;border-radius:4px;background:#eee2f6;color:#58366c;font-size:10px;font-weight:700}.place-card input,.place-card textarea{width:100%;border:0;border-bottom:1px solid #e6e6e1;padding:4px 0;background:transparent;font:12px inherit}.place-card textarea{height:28px}.place-card button{justify-self:start;padding:4px 7px;background:transparent;border:1px solid #9dbaaa;border-radius:5px;color:#1d5b46;font:12px inherit}.place-card .place-delete{color:#9a5346;border-color:#dcb7b0}.event-place-link{display:block;margin-top:-2px;color:#607569;font-size:11px}.event-edit{margin-top:2px;justify-self:start;padding:4px 7px;background:#eff5ef;border:1px solid #9dbaaa;border-radius:5px;color:#1d5b46;font:12px inherit;cursor:pointer}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.calendar-block.compact{padding:1px 5px;line-height:1}.calendar-block.compact time{font-size:10px;white-space:nowrap}.calendar-block.compact em,.calendar-block.compact b,.calendar-block.compact small{display:none}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.schedule-selecting{cursor:crosshair!important}.calendar-marquee{position:fixed;z-index:1200;border:1px dashed #1d6b4f;background:#6aa98230;pointer-events:none}.calendar-block.batch-selected{outline:2px solid #d97706;outline-offset:2px;filter:saturate(1.25)}.calendar-drop-preview{position:absolute;left:5px;right:5px;border:2px dashed #1d6b4f;border-radius:6px;background:#ffffffdd;color:#174735;pointer-events:none;z-index:20;display:flex;align-items:flex-start;padding:3px 7px;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;box-shadow:0 1px 5px #173c3240}' }));
-document.head.append(Object.assign(document.createElement('style'), { textContent: '.map-route-legend{position:absolute;left:10px;bottom:10px;z-index:700;max-width:calc(100% - 20px);background:#fffffff0;border:1px solid #d8e1da;border-radius:7px;padding:6px 8px;display:grid;gap:3px;font-size:10px;box-shadow:0 2px 8px #173c3220}.map-route-legend b{font-size:10px;color:#315540}.map-route-legend div{display:flex;align-items:center;gap:5px;white-space:nowrap}.map-route-legend i{width:8px;height:8px;border:1px solid #fff;border-radius:50%;box-shadow:0 0 0 1px #173c3228;display:inline-block}.map-route-legend small{max-width:190px;color:#607569;line-height:1.25}.route-direction-arrow{display:grid;width:12px;height:12px;place-items:center;color:#1d5b46;font:500 11px/1 system-ui,sans-serif;text-shadow:0 0 1px #fff,0 0 2px #fff;transform:rotate(var(--bearing));transform-origin:center;pointer-events:auto}' }));
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.map-route-legend{position:absolute;left:10px;bottom:10px;z-index:700;max-width:calc(100% - 20px);background:#fffffff0;border:1px solid #d8e1da;border-radius:7px;padding:6px 8px;display:grid;gap:3px;font-size:10px;box-shadow:0 2px 8px #173c3220}.map-route-legend b{font-size:10px;color:#315540}.map-route-legend div{display:flex;align-items:center;gap:5px;white-space:nowrap}.map-route-legend i{width:8px;height:8px;border:1px solid #fff;border-radius:50%;box-shadow:0 0 0 1px #173c3228;display:inline-block}.map-route-legend i.route-legend-swatch{width:17px;height:3px;border:0;border-radius:2px;box-shadow:none}.map-route-legend small{max-width:190px;color:#607569;line-height:1.25}.route-direction-arrow{display:grid;width:12px;height:12px;place-items:center;color:#1d5b46;font:500 11px/1 system-ui,sans-serif;text-shadow:0 0 1px #fff,0 0 2px #fff;transform:rotate(var(--bearing));transform-origin:center;pointer-events:auto}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.weather-meta{display:block!important;color:#245e84!important}' }));
 let map;
 let routeLayer;
@@ -1129,10 +1129,21 @@ function addRouteDirectionArrows(latLngs, color, event, routeIndex) {
 }
 function renderMapRouteLegend(date) {
   if (!mapRouteLegend) { mapRouteLegend = document.createElement('div'); mapRouteLegend.className = 'map-route-legend'; $('#map')?.append(mapRouteLegend); }
-  // 分日浏览或已高亮某张卡片时，地图信息应聚焦当前行程而非覆盖一层总览图例。
-  if (date || Number.isInteger(state.selectedIndex)) { mapRouteLegend.hidden = true; return; }
-  const placeTypes = [...new Set(state.locations.filter(place => place.resolved?.location || place.address).map(place => place.type).filter(Boolean))];
-  mapRouteLegend.innerHTML = `<b>地点类别</b>${placeTypes.map(type => `<div><i style="background:${markerColors[type] || markerColors.spot}"></i>${escapeHtml(typeNames[type] || type)}</div>`).join('')}<small>点位颜色按地点库类别显示；路线颜色按日期区分。</small>`;
+  if (!date && !Number.isInteger(state.selectedIndex)) {
+    const dates = [...new Set(state.schedule.map(item => item.date).filter(Boolean))].sort();
+    mapRouteLegend.innerHTML = `<b>行程日期</b>${dates.map(item => `<div><i class="route-legend-swatch" style="background:${routeColorForDate(item)}"></i>${escapeHtml(item)}</div>`).join('')}<small>路线颜色按日期区分；点击日期或卡片后可查看地点类别。</small>`;
+    mapRouteLegend.hidden = !dates.length;
+    return;
+  }
+  const activeDate = date || state.schedule[state.selectedIndex]?.date || '';
+  const activeEvents = state.schedule.filter(event => !activeDate || event.date === activeDate);
+  const placeTypes = [...new Set(activeEvents.flatMap(event => {
+    if (event.type === 'drive') return ['drive'];
+    if (event.type === 'flight') return ['flight'];
+    const place = state.locations.find(item => item.id === event.locationId);
+    return [place?.type || event.type];
+  }).filter(Boolean))];
+  mapRouteLegend.innerHTML = `<b>${activeDate ? `${escapeHtml(activeDate)} 地点类别` : '地点类别'}</b>${placeTypes.map(type => `<div><i style="background:${markerColors[type] || markerColors.spot}"></i>${escapeHtml(typeNames[type] || eventTypeNames[type] || type)}</div>`).join('')}<small>点位颜色按地点库类别显示。</small>`;
   mapRouteLegend.hidden = !placeTypes.length;
 }
 async function showDayOverview(date) {
