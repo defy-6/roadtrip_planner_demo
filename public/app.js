@@ -38,7 +38,7 @@ document.head.append(Object.assign(document.createElement('link'), { rel: 'style
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.locations-panel{margin-top:18px;padding-top:16px;border-top:1px solid #e4e6df}.locations-panel h3{margin:0;font-size:15px}.places{display:grid;gap:9px;margin-top:10px}.place-card{display:grid;gap:6px;padding:10px;border:1px dashed #cdd9d0;border-radius:8px;background:#fbfdfb}.place-card>div{display:flex;align-items:center;gap:7px}.place-card b{font-size:13px}.place-type{padding:2px 5px;border-radius:4px;background:#eee2f6;color:#58366c;font-size:10px;font-weight:700}.place-card input,.place-card textarea{width:100%;border:0;border-bottom:1px solid #e6e6e1;padding:4px 0;background:transparent;font:12px inherit}.place-card textarea{height:28px}.place-card button{justify-self:start;padding:4px 7px;background:transparent;border:1px solid #9dbaaa;border-radius:5px;color:#1d5b46;font:12px inherit}.place-card .place-delete{color:#9a5346;border-color:#dcb7b0}.event-place-link{display:block;margin-top:-2px;color:#607569;font-size:11px}.event-edit{margin-top:2px;justify-self:start;padding:4px 7px;background:#eff5ef;border:1px solid #9dbaaa;border-radius:5px;color:#1d5b46;font:12px inherit;cursor:pointer}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.calendar-block.compact{padding:1px 5px;line-height:1}.calendar-block.compact time{font-size:10px;white-space:nowrap}.calendar-block.compact em,.calendar-block.compact b,.calendar-block.compact small{display:none}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.schedule-selecting{cursor:crosshair!important}.calendar-marquee{position:fixed;z-index:1200;border:1px dashed #1d6b4f;background:#6aa98230;pointer-events:none}.calendar-block.batch-selected{outline:2px solid #d97706;outline-offset:2px;filter:saturate(1.25)}.calendar-drop-preview{position:absolute;left:5px;right:5px;border:2px dashed #1d6b4f;border-radius:6px;background:#ffffffdd;color:#174735;pointer-events:none;z-index:20;display:flex;align-items:flex-start;padding:3px 7px;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;box-shadow:0 1px 5px #173c3240}' }));
-document.head.append(Object.assign(document.createElement('style'), { textContent: '.map-route-legend{position:absolute;left:12px;bottom:12px;z-index:700;background:#ffffffeb;border:1px solid #d8e1da;border-radius:7px;padding:6px 8px;display:grid;gap:3px;font-size:10px;box-shadow:0 2px 8px #173c3220}.map-route-legend div{display:flex;align-items:center;gap:5px;white-space:nowrap}.map-route-legend i{width:18px;height:3px;border-radius:2px;display:inline-block}.map-route-legend small{max-width:150px;color:#607569;line-height:1.25}.route-direction-arrow{display:grid;width:12px;height:12px;place-items:center;color:#1d5b46;font:500 11px/1 system-ui,sans-serif;text-shadow:0 0 1px #fff,0 0 2px #fff;transform:rotate(var(--bearing));transform-origin:center;pointer-events:auto}' }));
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.map-route-legend{position:absolute;left:10px;bottom:10px;z-index:700;max-width:calc(100% - 20px);background:#fffffff0;border:1px solid #d8e1da;border-radius:7px;padding:6px 8px;display:grid;gap:3px;font-size:10px;box-shadow:0 2px 8px #173c3220}.map-route-legend b{font-size:10px;color:#315540}.map-route-legend div{display:flex;align-items:center;gap:5px;white-space:nowrap}.map-route-legend i{width:8px;height:8px;border:1px solid #fff;border-radius:50%;box-shadow:0 0 0 1px #173c3228;display:inline-block}.map-route-legend small{max-width:190px;color:#607569;line-height:1.25}.route-direction-arrow{display:grid;width:12px;height:12px;place-items:center;color:#1d5b46;font:500 11px/1 system-ui,sans-serif;text-shadow:0 0 1px #fff,0 0 2px #fff;transform:rotate(var(--bearing));transform-origin:center;pointer-events:auto}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.weather-meta{display:block!important;color:#245e84!important}' }));
 let map;
 let routeLayer;
@@ -255,6 +255,7 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.calendar-grid.png-export{grid-template-rows:48px auto!important}.calendar-grid.png-export .calendar-corner,.calendar-grid.png-export .calendar-head,.calendar-grid.png-export .time-rail{position:relative!important;top:auto!important;left:auto!important}.calendar-grid.png-export .calendar-head{display:block!important;padding:7px 10px!important;box-shadow:none!important}.calendar-grid.png-export .calendar-head b,.calendar-grid.png-export .calendar-head small{display:block!important;position:static!important;transform:none!important}.calendar-grid.png-export .time-rail{box-shadow:none!important}.map.png-export .leaflet-control-zoom{display:none!important}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.map-export-preview{width:min(1100px,94vw);max-width:none;padding:0;border:0;border-radius:14px;background:#fffdf8;box-shadow:0 20px 70px #173c3260}.map-export-preview::backdrop{background:#173c3255}.map-export-preview section{padding:16px}.map-export-preview .aside-head{margin-bottom:4px}.map-export-preview p{margin:0 0 10px}.map-export-preview img{display:block;max-width:100%;max-height:68vh;margin:auto;border:1px solid #e4e1d8;border-radius:8px;background:#f7f4ed;object-fit:contain}.map-export-preview .editor-actions{margin-top:12px}.map-export-control{position:absolute;z-index:1100;left:228px;top:12px;padding:5px 8px!important;font-size:10px!important;background:#fffdf8!important;box-shadow:0 2px 8px #173c3220}@media(max-width:980px){.map-export-control{left:12px;top:92px}}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.calendar-grid{grid-template-rows:52px auto!important}.calendar-head{height:52px!important;box-sizing:border-box!important;overflow:hidden!important}.calendar-head b{display:block!important;line-height:1.1!important}.calendar-head small{display:block!important;line-height:1.15!important;margin-top:3px!important}.schedule-panel>.aside-head{display:flex!important;align-items:center!important;gap:8px!important;min-width:0!important}.schedule-panel>.aside-head>div:first-child{flex:0 0 auto!important;min-width:max-content!important}.schedule-panel>.aside-head h2{white-space:nowrap!important;line-height:1!important;margin:0!important}.schedule-panel>.aside-head>div:last-child{display:flex!important;flex:1 1 auto!important;min-width:0!important;align-items:center!important;justify-content:flex-end!important;flex-wrap:nowrap!important;gap:5px!important;overflow-x:auto!important;scrollbar-width:none!important}.schedule-panel>.aside-head>div:last-child::-webkit-scrollbar{display:none}.schedule-panel>.aside-head button,.schedule-panel>.aside-head select{flex:0 0 auto!important;white-space:nowrap!important}@media(min-width:981px){.schedule-panel>.aside-head{min-height:42px!important}.schedule-panel>.aside-head h2{font-size:15px!important}.schedule-panel>.aside-head button,.schedule-panel>.aside-head select{padding:5px 6px!important;font-size:9px!important}.schedule-panel>.aside-head #scheduleHint{font-size:9px!important;white-space:nowrap!important}.schedule-panel.is-expanded .calendar-grid{grid-template-rows:52px auto!important}.schedule-panel.is-expanded .calendar-head{height:52px!important;padding:6px 7px!important}.schedule-panel.is-expanded .calendar-head b{font-size:11px!important}.schedule-panel.is-expanded .calendar-head small{font-size:9px!important}}' }));
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.route-summary-detail{margin-top:6px;padding:7px 10px;border-radius:7px;background:#143f33;color:#f7f4ee;line-height:1.45;font-size:11px;box-shadow:inset 0 0 0 1px #8cc0a555}.route-summary-detail[hidden]{display:none!important}.route-summary-detail div{display:inline-block;margin-right:12px}.route-summary-detail b{color:#fff}.route-summary-detail small{display:block;color:#cce6d6}.route-summary-btn{padding:4px 7px!important;border-color:#9dc4ae!important;color:#f7f4ee!important;background:#174f3d!important;font-size:10px!important}.route-detail{min-height:118px!important;max-height:176px!important;margin:8px 14px 12px!important;padding:10px 12px!important;overflow:auto!important;background:#eff6f0!important}.route-detail span{color:#4b6758;font-size:.92em}.route-detail b{display:inline-block;margin-bottom:2px}.map-panel{overflow:hidden}.map{overflow:hidden}.map .map-route-legend{position:absolute!important}@media(min-width:981px){main{grid-template-rows:56px minmax(0,1fr)!important}.schedule-panel,.content,.locations-panel{grid-row:2!important}main>header{height:56px!important;display:grid!important;grid-template-columns:72px minmax(300px,1fr) auto!important;gap:12px!important;align-items:center!important}.hero{position:relative!important;display:grid!important;grid-template-columns:minmax(180px,1fr) auto!important;align-items:center!important;gap:12px!important;margin:0!important;padding:7px 14px!important;min-height:0!important;height:56px!important;background:#e7f2eb!important;background-image:none!important;border:1px solid #cfe0d5!important;color:#173c32!important}.hero #tripName{width:100%!important;max-width:380px!important;color:#173c32!important;border-bottom-color:#79a48a!important}.hero p{display:none!important}.route-stat{display:flex!important;align-items:center!important;gap:8px!important;text-align:right!important;color:#214d3d!important}.route-stat span{color:#547467!important;font-weight:600}.route-stat strong{color:#123e30!important;font-size:22px!important}.route-stat small{color:#345e4c!important;max-width:360px!important}.hero .route-summary-detail{position:absolute;top:61px;left:0;right:0;z-index:1300;max-height:150px;overflow:auto;box-shadow:0 8px 22px #173c3238}.content>.map-panel{grid-template-rows:minmax(0,1fr) auto auto!important}.content>.map-panel .route-detail{min-height:132px!important;max-height:184px!important;margin:8px 12px 12px!important}.map-route-legend{bottom:10px!important;left:10px!important;max-height:calc(100% - 20px);overflow:auto}.top-actions{min-width:0!important}.top-actions .hint{color:#537366!important}header h1{color:#173c32!important}}@media(max-width:980px){.route-summary-detail{margin:8px 0}.hero{color:#173c32!important;background:#e7f2eb!important;background-image:none!important}.hero #tripName{color:#173c32!important;border-bottom-color:#79a48a!important}.route-stat span,.route-stat small{color:#3d6755!important}.route-stat strong{color:#173c32!important}.route-detail{min-height:110px!important}}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.place-photo-preview{width:100%;height:120px;display:block;object-fit:cover;border-radius:7px;background:#edf1ed}.place-photo-action{display:inline-flex!important;justify-self:start;padding:4px 7px;border:1px solid #9dbaaa;border-radius:5px;color:#1d5b46;font:12px inherit;cursor:pointer}.place-photo-action input{display:none}.place-photo-placeholder{height:54px;display:grid;place-items:center;border:1px dashed #cdd9d0;border-radius:7px;color:#849188;font-size:11px}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.place-card .place-save{background:#1d5b46!important;color:#fff!important;border-color:#1d5b46!important}.place-card.dirty{border-color:#d49b45;background:#fffaf0}.place-card.dirty .place-save::after{content:" · 未保存";font-size:.85em}.place-card .place-name:focus{border-bottom-color:#1d5b46;box-shadow:0 1px 0 #1d5b46}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.flight-airport-marker{filter:drop-shadow(0 0 4px #f4d56a)}.flight-arrow-marker{background:transparent!important;border:0!important}.flight-arrow-marker span{display:block;width:16px;height:16px;color:#d4a72c;font-size:13px;line-height:16px;text-align:center;text-shadow:0 0 4px #fff,0 0 7px #f4d56a;transform:rotate(var(--flight-arrow-angle));transform-origin:center;font-weight:900}' }));
@@ -1127,11 +1128,12 @@ function addRouteDirectionArrows(latLngs, color, event, routeIndex) {
   });
 }
 function renderMapRouteLegend(date) {
-  if (!mapRouteLegend) { mapRouteLegend = document.createElement('div'); mapRouteLegend.className = 'map-route-legend'; mapWorkspace?.querySelector('.map-panel')?.append(mapRouteLegend); }
-  if (date) { mapRouteLegend.hidden = true; return; }
-  const dates = [...new Set(state.schedule.map(item => item.date).filter(Boolean))].sort();
-  mapRouteLegend.innerHTML = `${dates.map(item => `<div><i style="background:${routeColorForDate(item)}"></i>${item}</div>`).join('')}<small>仅反向且连续近距离超过 20 公里的路线在总览中分道</small>`;
-  mapRouteLegend.hidden = !dates.length;
+  if (!mapRouteLegend) { mapRouteLegend = document.createElement('div'); mapRouteLegend.className = 'map-route-legend'; $('#map')?.append(mapRouteLegend); }
+  // 分日浏览或已高亮某张卡片时，地图信息应聚焦当前行程而非覆盖一层总览图例。
+  if (date || Number.isInteger(state.selectedIndex)) { mapRouteLegend.hidden = true; return; }
+  const placeTypes = [...new Set(state.locations.filter(place => place.resolved?.location || place.address).map(place => place.type).filter(Boolean))];
+  mapRouteLegend.innerHTML = `<b>地点类别</b>${placeTypes.map(type => `<div><i style="background:${markerColors[type] || markerColors.spot}"></i>${escapeHtml(typeNames[type] || type)}</div>`).join('')}<small>点位颜色按地点库类别显示；路线颜色按日期区分。</small>`;
+  mapRouteLegend.hidden = !placeTypes.length;
 }
 async function showDayOverview(date) {
   const requestId = ++dayOverviewRequestId;
@@ -1289,7 +1291,9 @@ async function showDayOverview(date) {
     dayOverviewBounds = L.latLngBounds(bounds);
     map.fitBounds(dayOverviewBounds, { padding: [38, 38], maxZoom: 12 });
   }
-  $('#distance').textContent = `${date ? `${date} · ` : '全程 · '}已显示 ${places.filter(place => resolved.has(place.id)).length + customPointEntries.filter(point => resolved.has(point.key)).length} 个地点 · ${displayedRouteCount} 条线路`;
+  if (!Number.isInteger(state.selectedIndex)) {
+    $('#routeDetail').innerHTML = `<b>${date ? `${escapeHtml(date)} 地图总览` : '全程地图总览'}</b><small>已显示 ${places.filter(place => resolved.has(place.id)).length + customPointEntries.filter(point => resolved.has(point.key)).length} 个关联地点与 ${displayedRouteCount} 条行程线路。点击时间表卡片可在此查看该事件的详细信息。</small>`;
+  }
   if (requestId === dayOverviewRequestId) renderedOverviewDate = date || '';
 }
 function load(rawData, versionKey = rawData.planKey || defaultPlanId) {
@@ -1704,12 +1708,25 @@ function showSavedDriveInfo(entry) {
   const record = route?.amap;
   const title = `${origin?.name || '起点'} → ${destination?.name || '终点'}`;
   if (!record) { $('#routeDetail').innerHTML = `<b>${escapeHtml(title)}</b><small>该路线尚未保存高德查询结果；请在编辑事件中点击“获取高德路线”。</small>`; return; }
-  $('#routeDetail').innerHTML = `<b>${escapeHtml(title)}</b><br>已保存高德结果：${(Number(record.distance || 0) / 1000).toFixed(1)} 公里 · ${fmt(Number(record.duration || 0))} · 过路费约 ${Number(record.tolls || 0).toFixed(0)} 元。<small>查询于 ${new Date(record.queriedAt).toLocaleString('zh-CN')}${record.queryPeriod === 'night' ? '（夜间结果，建议白天重查）' : ''}；地图点击不会重新计算。</small>`;
+  $('#routeDetail').innerHTML = `<b>${escapeHtml(entry.title || title)}</b><br><span>${escapeHtml(entry.date || '')}${entry.start ? ` · ${escapeHtml(entry.start)}–${escapeHtml(entry.end || '')}` : ''}</span><br>高德路线：${(Number(record.distance || 0) / 1000).toFixed(1)} 公里 · ${fmt(Number(record.duration || 0))} · 过路费约 ${Number(record.tolls || 0).toFixed(0)} 元。${entry.detail ? `<br><small>${escapeHtml(entry.detail)}</small>` : ''}<small>查询于 ${new Date(record.queriedAt).toLocaleString('zh-CN')}${record.queryPeriod === 'night' ? '（夜间结果，建议白天重查）' : ''}；地图点击不会重新计算。</small>`;
+}
+function showEventDetail(entry, extra = '') {
+  const place = state.locations.find(item => item.id === entry.locationId);
+  const time = [entry.start, entry.end].filter(Boolean).join('–');
+  const lines = [
+    `<b>${escapeHtml(entry.title || '未命名事件')}</b>`,
+    `<span>${escapeHtml(entry.date || '')}${time ? ` · ${escapeHtml(time)}` : ''} · ${escapeHtml(eventTypeNames[entry.type] || typeNames[entry.type] || '事件')}</span>`,
+    place?.name ? `<span>地点：${escapeHtml(place.name)}</span>` : '',
+    entry.detail ? `<small>${escapeHtml(entry.detail)}</small>` : '',
+    extra
+  ].filter(Boolean);
+  $('#routeDetail').innerHTML = lines.join('<br>');
 }
 async function focusScheduleEvent(index, { skipDriveQuery = false } = {}) {
   const entry = state.schedule[index]; if (!entry) return;
   state.selectedIndex = index;
   mapFocusDate = entry.date || '';
+  renderMapRouteLegend(entry.date);
   const node = [...itemsEl.children].find(item => Number(item.dataset.scheduleIndex) === index);
   document.querySelectorAll('.calendar-block').forEach(block => block.classList.toggle('selected', Number(block.dataset.scheduleIndex) === index));
   // 当天总览已存在时不重建所有点线，卡片切换仅更新高亮图层。
@@ -1737,8 +1754,8 @@ async function focusScheduleEvent(index, { skipDriveQuery = false } = {}) {
       fitSelectionWithDayContext(L.latLngBounds([[lat, lng]]), 12);
       L.popup().setLatLng([lat, lng]).setContent(`<b>${escapeHtml(entry.title)}</b><br>关联地点：${escapeHtml(place.name)}`).openOn(map);
     } catch { /* 地点无法解析时仍保留当天地图总览。 */ }
-    $('#routeDetail').innerHTML = `<b>${escapeHtml(entry.title)}</b><small>已定位关联地点：${escapeHtml(place.name)}。</small>`;
-  } else if (node) { focusNode(node); $('#routeDetail').innerHTML = `<b>${escapeHtml(entry.title)}</b><small>这是时间事件；关联具体地点后即可在地图中定位。</small>`; }
+    showEventDetail(entry, `<small>已定位关联地点：${escapeHtml(place.name)}。</small>`);
+  } else if (node) { focusNode(node); showEventDetail(entry, '<small>这是时间事件；关联具体地点后即可在地图中定位。</small>'); }
 }
 function updateEditorRouteQueryState(route) {
   const button = $('#resolveEditorRoute'), status = $('#editorRouteStatus'), record = route?.amap;
@@ -2562,11 +2579,17 @@ function renderRouteTotals(showDetail = false) {
   const { days, total, pending, eventCount } = routeTotals();
   $('#duration').textContent = total.count ? fmt(total.duration) : '—';
   $('#distance').textContent = total.count ? `${(total.distance / 1000).toFixed(1)} 公里 · 过路费约 ${total.tolls.toFixed(0)} 元 · ${total.count}/${eventCount} 段已确认${pending ? ` · ${pending} 段待查询` : ''}` : `${eventCount} 段路程尚未查询`;
+  const detail = $('#routeSummaryDetail');
   if (!showDetail) return;
   const rows = [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, day]) => `<div><b>${escapeHtml(date)}</b>：${(day.distance / 1000).toFixed(1)} 公里 · ${fmt(day.duration)} · 过路费约 ${day.tolls.toFixed(0)} 元 · ${day.count} 段</div>`).join('');
-  $('#routeDetail').innerHTML = `<b>${state.dayFilter ? `${escapeHtml(state.dayFilter)} 路程汇总` : '方案分日路程汇总'}</b>${rows || '<div>尚无已查询的路程。</div>'}<small>总计只相加各路程事件已保存的高德结果，不会把整个方案的地点重新串联计算。${pending ? `还有 ${pending} 段待明确起终点或查询。` : ''}</small>`;
+  detail.innerHTML = `<b>${state.dayFilter ? `${escapeHtml(state.dayFilter)} 路程汇总` : '方案分日路程汇总'}</b>${rows || '<div>尚无已查询的路程。</div>'}<small>仅相加各路程事件已保存的高德结果，不会把整个方案重新串联计算。${pending ? `还有 ${pending} 段待明确起终点或查询。` : ''}</small>`;
+  detail.hidden = false;
 }
-$('#routeBtn').onclick = () => renderRouteTotals(true);
+$('#routeBtn').onclick = () => {
+  const detail = $('#routeSummaryDetail');
+  if (!detail.hidden) { detail.hidden = true; return; }
+  renderRouteTotals(true);
+};
 async function initializePlanner() {
   let cached = isShareMode ? null : localStorage.getItem('roadtrip');
   setPlanCatalog({});
