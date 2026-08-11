@@ -98,19 +98,49 @@ app.get('/api/geocode', async (req, res) => {
 
 app.post('/api/route', async (req, res) => {
   try {
-    const { origin, destination, waypoints = [], strategy = '32' } = req.body;
+    const { origin, destination, waypoints = [], strategy = '32', mode = 'driving', city, cityd } = req.body;
     if (!origin || !destination) throw new Error('起点和终点不能为空');
-    const params = { origin, destination, strategy, show_fields: 'cost,polyline' };
-    if (waypoints.length) params.waypoints = waypoints.join(';');
-    const data = await amap('/v5/direction/driving', params);
-    const paths = (data.route?.paths || []).map(path => ({
+    const normalizePath = path => ({
       ...path,
-      duration: path.cost?.duration || '0',
+      duration: path.duration || path.cost?.duration || '0',
       tolls: path.cost?.tolls || '0',
       toll_distance: path.cost?.toll_distance || '0',
       traffic_lights: path.cost?.traffic_lights || '0',
       steps: (path.steps || []).map(step => ({ ...step, distance: step.step_distance || step.distance || '0', polyline: step.polyline || '' }))
-    }));
+    });
+    if (mode === 'walking') {
+      if (waypoints.length) throw new Error('高德步行路线暂不支持途经点，请拆分为多个路程事件');
+      const data = await amap('/v3/direction/walking', { origin, destination });
+      const paths = (data.route?.paths || []).map(normalizePath);
+      if (!paths.length) throw new Error('高德没有返回可用步行路线');
+      res.json({ ...data, route: { ...data.route, paths } }); return;
+    }
+    if (mode === 'bicycling') {
+      if (waypoints.length) throw new Error('高德骑行路线暂不支持途经点，请拆分为多个路程事件');
+      const data = await amap('/v4/direction/bicycling', { origin, destination });
+      const paths = (data.data?.paths || []).map(normalizePath);
+      if (!paths.length || Number(data.errcode || 0) !== 0) throw new Error(data.errdetail || data.errmsg || '高德没有返回可用骑行路线');
+      res.json({ ...data, route: { origin, destination, paths } }); return;
+    }
+    if (mode === 'transit') {
+      if (waypoints.length) throw new Error('高德公共交通路线暂不支持途经点，请拆分为多个路程事件');
+      if (!city) throw new Error('公共交通需要填写公交起点城市');
+      const data = await amap('/v3/direction/transit/integrated', { origin, destination, city, ...(cityd ? { cityd } : {}), strategy: '0', extensions: 'all' });
+      const transit = data.route?.transits?.[0];
+      if (!transit) throw new Error('高德没有返回可用公共交通方案');
+      const steps = (transit.segments || []).flatMap(segment => [
+        ...(segment.walking?.steps || []),
+        ...(segment.bus?.buslines || []).map(line => ({ instruction: line.name || '公共交通', road: line.name || '', distance: line.distance || '0', duration: line.duration || '0', polyline: line.polyline || '' })),
+        ...(segment.railway?.trip ? [{ instruction: segment.railway.trip, road: segment.railway.name || '铁路', distance: segment.railway.distance || '0', duration: segment.railway.time || '0', polyline: segment.railway.polyline || '' }] : [])
+      ]).filter(step => step.polyline || step.distance);
+      const distance = Number(transit.distance || steps.reduce((sum, step) => sum + Number(step.distance || 0), 0));
+      const paths = [{ distance, duration: transit.duration || '0', tolls: transit.cost || '0', toll_distance: '0', steps }];
+      res.json({ ...data, route: { ...data.route, paths } }); return;
+    }
+    const params = { origin, destination, strategy, show_fields: 'cost,polyline' };
+    if (waypoints.length) params.waypoints = waypoints.join(';');
+    const data = await amap('/v5/direction/driving', params);
+    const paths = (data.route?.paths || []).map(normalizePath);
     if (!paths.length) throw new Error('高德没有返回可用驾车路线');
     res.json({ ...data, route: { ...data.route, paths } });
   } catch (e) { res.status(400).json({ error: e.message }); }

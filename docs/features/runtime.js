@@ -1,5 +1,5 @@
 import { PRESET_PLANS, PRESET_SCHEDULES } from '../plans.js';
-import { DEFAULT_PLAN_ID, DRIVE_TRAVEL_MODES, MARKER_COLORS, PLACE_TYPE_NAMES } from '../core/constants.js';
+import { DEFAULT_PLAN_ID, DRIVE_TRAVEL_MODES, MARKER_COLORS, PLACE_TYPE_NAMES, TRANSPORT_MODES } from '../core/constants.js';
 import { createRuntimePlannerState } from '../core/state.js';
 import { $, clockToMinute, escapeHtml, minuteToClock, pause } from '../core/utils.js';
 import { createPlansFeature } from './plans.js';
@@ -86,7 +86,7 @@ $('.address', template.content).placeholder = '具体地址待定可留空，填
 $('#editorAddress').placeholder = '具体地址待定可留空，填写后可定位';
 const routeLinkFields = document.createElement('div');
 routeLinkFields.id = 'routeLinkFields'; routeLinkFields.className = 'editor-grid';
-routeLinkFields.innerHTML = '<label style="grid-column:1 / -1">关联通用路线<select id="routeLibrarySelect"><option value="">新建路线 / 暂不选择</option></select></label><label style="grid-column:1 / -1">出行方式 / 驾车策略<select id="routeTravelMode"><option value="recommended">自驾 · 高德推荐</option><option value="highway">自驾 · 高速优先</option><option value="fastest">自驾 · 速度最快</option><option value="lowToll">自驾 · 少收费</option><option value="avoidHighway">自驾 · 不走高速</option><option value="mainRoad">自驾 · 大路优先</option></select><small class="hint">当前路程模块使用高德驾车路径；更改策略后点击“获取高德路线”再保存。</small></label><label>起点地点<input id="routeOriginSearch" list="editorPlaceList" placeholder="搜索地点名称或地址"><select id="routeOrigin" style="display:none"></select></label><label>终点地点<input id="routeDestinationSearch" list="editorPlaceList" placeholder="搜索地点名称或地址"><select id="routeDestination" style="display:none"></select></label><label>自定义起点名称<input id="routeOriginName" placeholder="例如：伊宁市区酒店"></label><label>自定义起点地址<input id="routeOriginAddress" placeholder="选择地点后可留空"></label><label>自定义终点名称<input id="routeDestinationName" placeholder="例如：赛里木湖东门"></label><label>自定义终点地址<input id="routeDestinationAddress" placeholder="选择地点后可留空"></label><label style="grid-column:1 / -1">途经地点（从地点库勾选后可排序）<select id="routeWaypoints" multiple size="4"></select></label><button type="button" id="addRouteWaypoint" class="ghost" style="grid-column:1 / -1">+ 新增途经地点</button><div id="routeWaypointOrder" class="waypoint-order" aria-label="途经点顺序"></div><div id="editorRouteStatus" class="resolved-place" style="grid-column:1 / -1" hidden></div><button type="button" id="resolveEditorRoute" style="grid-column:1 / -1">获取高德路线</button>';
+routeLinkFields.innerHTML = '<label style="grid-column:1 / -1">关联通用路线<select id="routeLibrarySelect"><option value="">新建路线 / 暂不选择</option></select></label><label>出行方式<select id="routeTransportMode"><option value="driving">自驾</option><option value="walking">步行</option><option value="bicycling">骑行</option><option value="transit">公共交通</option></select></label><label id="routeTravelModeField">自驾策略<select id="routeTravelMode"><option value="recommended">高德推荐</option><option value="highway">高速优先</option><option value="fastest">速度最快</option><option value="lowToll">少收费</option><option value="avoidHighway">不走高速</option><option value="mainRoad">大路优先</option></select></label><div id="routeTransitCities" class="editor-grid" style="grid-column:1 / -1" hidden><label>公交起点城市<input id="routeTransitCity" placeholder="例如：北京市 / 010"></label><label>公交终点城市<input id="routeTransitCityd" placeholder="跨城时必填，例如：上海市"></label><small class="hint" style="grid-column:1 / -1">公共交通将按高德公交/地铁/铁路方案计算；目前不支持途经点。</small></div><small id="routeModeHint" class="hint" style="grid-column:1 / -1">自驾支持途经点和过路费估算；更改方式或策略后请重新获取路线。</small><label>起点地点<input id="routeOriginSearch" list="editorPlaceList" placeholder="搜索地点名称或地址"><select id="routeOrigin" style="display:none"></select></label><label>终点地点<input id="routeDestinationSearch" list="editorPlaceList" placeholder="搜索地点名称或地址"><select id="routeDestination" style="display:none"></select></label><label>自定义起点名称<input id="routeOriginName" placeholder="例如：伊宁市区酒店"></label><label>自定义起点地址<input id="routeOriginAddress" placeholder="选择地点后可留空"></label><label>自定义终点名称<input id="routeDestinationName" placeholder="例如：赛里木湖东门"></label><label>自定义终点地址<input id="routeDestinationAddress" placeholder="选择地点后可留空"></label><label id="routeWaypointsField" style="grid-column:1 / -1">途经地点（从地点库勾选后可排序）<select id="routeWaypoints" multiple size="4"></select></label><button type="button" id="addRouteWaypoint" class="ghost" style="grid-column:1 / -1">+ 新增途经地点</button><div id="routeWaypointOrder" class="waypoint-order" aria-label="途经点顺序"></div><div id="editorRouteStatus" class="resolved-place" style="grid-column:1 / -1" hidden></div><button type="button" id="resolveEditorRoute" style="grid-column:1 / -1">获取高德路线</button>';
 const routeEditorSection = document.createElement('details');
 routeEditorSection.id = 'routeEditorSection'; routeEditorSection.className = 'editor-section route-editor-section'; routeEditorSection.open = true;
 routeEditorSection.innerHTML = '<summary><span>路线设置</span><small>起终点、途经点与高德路线</small></summary>';
@@ -960,9 +960,12 @@ function mergeUniversalLocations(data) {
   return { ...data, schedule, routes, locations: merged };
 }
 const driveTravelModes = DRIVE_TRAVEL_MODES;
+const transportModes = TRANSPORT_MODES;
+const normalizedTransportMode = mode => transportModes[mode] ? mode : 'driving';
+const transportModeMeta = mode => transportModes[normalizedTransportMode(mode)];
 const normalizedTravelMode = mode => driveTravelModes[mode] ? mode : 'recommended';
 const driveTravelMeta = mode => driveTravelModes[normalizedTravelMode(mode)];
-function routeSignature(route = {}) { return [route.originPlaceId || '', ...(route.viaPlaceIds || []), route.destinationPlaceId || '', normalizedTravelMode(route.travelMode)].join('>'); }
+function routeSignature(route = {}) { return [route.originPlaceId || '', ...(route.viaPlaceIds || []), route.destinationPlaceId || '', normalizedTransportMode(route.transportMode), normalizedTravelMode(route.travelMode)].join('>'); }
 function routeEndpointMatches(placeId, customPlace, routePlaceId) {
   if (placeId) return placeId === routePlaceId;
   if (!customPlace || !routePlaceId) return false;
@@ -981,6 +984,7 @@ function routeForScheduleEvent(event) {
   return state.routes.find(route => {
     const routeName = normalizePlaceLookup(route.name);
     if (!eventName || !routeName || (eventName !== routeName && !eventName.includes(routeName) && !routeName.includes(eventName))) return false;
+    if (normalizedTransportMode(route.transportMode) !== normalizedTransportMode(links.transportMode)) return false;
     if (normalizedTravelMode(route.travelMode) !== normalizedTravelMode(links.travelMode)) return false;
     return routeEndpointMatches(links.originPlaceId, links.customOrigin, route.originPlaceId)
       && routeEndpointMatches(links.destinationPlaceId, links.customDestination, route.destinationPlaceId);
@@ -989,7 +993,7 @@ function routeForScheduleEvent(event) {
 function upsertUniversalRoute(name, links) {
   const signature = routeSignature(links);
   let route = state.routes.find(item => routeSignature(item) === signature);
-  if (!route) { route = { id: crypto.randomUUID(), name: name || '未命名路线', originPlaceId: links.originPlaceId, destinationPlaceId: links.destinationPlaceId, viaPlaceIds: [...(links.viaPlaceIds || [])], travelMode: normalizedTravelMode(links.travelMode) }; state.routes.push(route); }
+  if (!route) { route = { id: crypto.randomUUID(), name: name || '未命名路线', originPlaceId: links.originPlaceId, destinationPlaceId: links.destinationPlaceId, viaPlaceIds: [...(links.viaPlaceIds || [])], transportMode: normalizedTransportMode(links.transportMode), travelMode: normalizedTravelMode(links.travelMode), transit: links.transit }; state.routes.push(route); }
   else if (name && (!route.name || route.name === '未命名路线')) route.name = name;
   return route;
 }
@@ -1262,12 +1266,12 @@ async function showDayOverview(date) {
         if (isShareMode) continue;
         const paths = [];
         for (let i = 1; i < pointKeys.length; i += 1) {
-          const response = await fetch('/api/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: resolved.get(pointKeys[i - 1]), destination: resolved.get(pointKeys[i]), strategy: driveTravelMeta(links.travelMode).strategy }) });
+          const response = await fetch('/api/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: resolved.get(pointKeys[i - 1]), destination: resolved.get(pointKeys[i]), mode: normalizedTransportMode(links.transportMode), strategy: driveTravelMeta(links.travelMode).strategy, city: links.transit?.city, cityd: links.transit?.cityd }) });
           const data = await response.json(); if (!response.ok) throw new Error(data.error); paths.push(data.route.paths[0]);
         }
         path = { duration: paths.reduce((sum, item) => sum + Number(item.duration), 0), distance: paths.reduce((sum, item) => sum + Number(item.distance), 0), tolls: paths.reduce((sum, item) => sum + Number(item.tolls || 0), 0), tollDistance: paths.reduce((sum, item) => sum + Number(item.toll_distance || 0), 0), steps: paths.flatMap(item => item.steps) };
         if (route) {
-          route.amap = { ...(route.amap || {}), distance: path.distance, duration: path.duration, tolls: path.tolls, tollDistance: path.tollDistance, travelMode: normalizedTravelMode(links.travelMode), strategy: driveTravelMeta(links.travelMode).strategy, steps: path.steps.map(step => ({ polyline: step.polyline || '' })) };
+          route.amap = { ...(route.amap || {}), distance: path.distance, duration: path.duration, tolls: path.tolls, tollDistance: path.tollDistance, transportMode: normalizedTransportMode(links.transportMode), travelMode: normalizedTravelMode(links.travelMode), strategy: driveTravelMeta(links.travelMode).strategy, steps: path.steps.map(step => ({ polyline: step.polyline || '' })) };
           routeCacheChanged = true;
         }
       }
@@ -1725,23 +1729,26 @@ async function showDriveSegment(index) {
     return record;
   }
   if (isShareMode) { showSavedDriveInfo(entry); return null; }
-  return calculateDriveRoute(stops, sharedRoute, entry.title, false, links.travelMode);
+  return calculateDriveRoute(stops, sharedRoute, entry.title, false, links.travelMode, links.transportMode, links.transit);
 }
-async function calculateDriveRoute(stops, sharedRoute, routeName, persist = true, travelMode = 'recommended') {
+async function calculateDriveRoute(stops, sharedRoute, routeName, persist = true, travelMode = 'recommended', transportMode = 'driving', transit = {}) {
   $('#routeDetail').textContent = '正在调用高德计算此段路线…';
   try {
     const travel = driveTravelMeta(travelMode);
+    const transport = normalizedTransportMode(transportMode);
     const geos = await Promise.all(stops.map(stop => geocode(stop.address, stop.title || stop.name)));
     const paths = [];
-    for (let i = 1; i < geos.length; i += 1) { const response = await fetch('/api/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: geos[i - 1].location, destination: geos[i].location, strategy: travel.strategy }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); paths.push(data.route.paths[0]); await pause(400); }
+    for (let i = 1; i < geos.length; i += 1) { const response = await fetch('/api/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: geos[i - 1].location, destination: geos[i].location, mode: transport, strategy: travel.strategy, city: transit?.city, cityd: transit?.cityd }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); paths.push(data.route.paths[0]); await pause(400); }
     const path = { duration: paths.reduce((sum, item) => sum + Number(item.duration), 0), distance: paths.reduce((sum, item) => sum + Number(item.distance), 0), tolls: paths.reduce((sum, item) => sum + Number(item.tolls || 0), 0), tollDistance: paths.reduce((sum, item) => sum + Number(item.toll_distance || 0), 0), steps: paths.flatMap(item => item.steps) };
     $('#duration').textContent = fmt(Number(path.duration)); $('#distance').textContent = `${(Number(path.distance) / 1000).toFixed(1)} 公里 · 此段路程`;
     const buffer = Number(state.preferences.buffer || 30);
     const queriedAt = new Date(); const isNightQuery = queriedAt.getHours() >= 21 || queriedAt.getHours() < 7;
-    const amapRecord = { distance: path.distance, duration: path.duration, tolls: path.tolls, tollDistance: path.tollDistance, travelMode: normalizedTravelMode(travelMode), strategy: travel.strategy, queriedAt: queriedAt.toISOString(), queryPeriod: isNightQuery ? 'night' : 'day', engine: 'amap-v5', steps: path.steps.map(step => ({ polyline: step.polyline || '' })) };
+    const amapRecord = { distance: path.distance, duration: path.duration, tolls: path.tolls, tollDistance: path.tollDistance, transportMode: transport, travelMode: normalizedTravelMode(travelMode), strategy: travel.strategy, queriedAt: queriedAt.toISOString(), queryPeriod: isNightQuery ? 'night' : 'day', engine: 'amap-v5', steps: path.steps.map(step => ({ polyline: step.polyline || '' })) };
     path.amap = amapRecord;
     showRouteOnMap(path, geos.map(item => item.location), stops.map(item => ({ ...item, name: item.title || item.name })), { name: sharedRoute?.name || routeName, routeId: sharedRoute?.id, amap: amapRecord });
-    $('#routeDetail').innerHTML = `<b>${stops.map(stop => escapeHtml(stop.title || stop.name)).join(' → ')}</b><br>${escapeHtml(travel.label)}：${(Number(path.distance) / 1000).toFixed(1)} 公里，预计 ${fmt(Number(path.duration))}，过路费约 ${path.tolls.toFixed(0)} 元${path.tollDistance ? `（收费路段 ${(path.tollDistance / 1000).toFixed(1)} 公里）` : ''}。<small>查询于 ${queriedAt.toLocaleString('zh-CN')}${isNightQuery ? '（夜间查询）' : ''}。高德普通驾车接口不能指定未来出发时刻；夜间封闭、季节管制和临时交通规则可能使查询路线绕行。这里的时间仅作最低参考，按当前“${escapeHtml(state.preferences.pace)}”节奏建议额外预留 ${buffer} 分钟，并在实际出发前重新导航确认。</small>`;
+    const tollText = transport === 'driving' ? `，过路费约 ${path.tolls.toFixed(0)} 元${path.tollDistance ? `（收费路段 ${(path.tollDistance / 1000).toFixed(1)} 公里）` : ''}` : '';
+    const notice = transport === 'driving' ? `高德普通驾车接口不能指定未来出发时刻；夜间封闭、季节管制和临时交通规则可能使查询路线绕行。这里的时间仅作最低参考，按当前“${escapeHtml(state.preferences.pace)}”节奏建议额外预留 ${buffer} 分钟，并在实际出发前重新导航确认。` : '该结果为高德当前可用方案参考，实际步行、骑行或公共交通请以出发时导航与班次为准。';
+    $('#routeDetail').innerHTML = `<b>${stops.map(stop => escapeHtml(stop.title || stop.name)).join(' → ')}</b><br>${escapeHtml(transport === 'driving' ? travel.label : transportModeMeta(transport).label)}：${(Number(path.distance) / 1000).toFixed(1)} 公里，预计 ${fmt(Number(path.duration))}${tollText}。<small>查询于 ${queriedAt.toLocaleString('zh-CN')}${transport === 'driving' && isNightQuery ? '（夜间查询）' : ''}。${notice}</small>`;
     if (sharedRoute && persist) { sharedRoute.amap = amapRecord; save(); renderRouteTotals(); }
     return path;
   } catch (error) { $('#routeDetail').textContent = error.message || '该路程暂时无法计算。'; }
@@ -1754,7 +1761,10 @@ function showSavedDriveInfo(entry) {
   const record = route?.amap;
   const title = `${origin?.name || '起点'} → ${destination?.name || '终点'}`;
   if (!record) { $('#routeDetail').innerHTML = `<b>${escapeHtml(title)}</b><small>该路线尚未保存高德查询结果；请在编辑事件中点击“获取高德路线”。</small>`; return; }
-  $('#routeDetail').innerHTML = `<b>${escapeHtml(entry.title || title)}</b><br><span>${escapeHtml(entry.date || '')}${entry.start ? ` · ${escapeHtml(entry.start)}–${escapeHtml(entry.end || '')}` : ''}</span><br>${escapeHtml(driveTravelMeta(links.travelMode || record.travelMode).label)}：${(Number(record.distance || 0) / 1000).toFixed(1)} 公里 · ${fmt(Number(record.duration || 0))} · 过路费约 ${Number(record.tolls || 0).toFixed(0)} 元。${entry.detail ? `<br><small>${escapeHtml(entry.detail)}</small>` : ''}<small>查询于 ${new Date(record.queriedAt).toLocaleString('zh-CN')}${record.queryPeriod === 'night' ? '（夜间结果，建议白天重查）' : ''}；地图点击不会重新计算。</small>`;
+  const transportMode = normalizedTransportMode(links.transportMode || record.transportMode);
+  const modeLabel = transportMode === 'driving' ? driveTravelMeta(links.travelMode || record.travelMode).label : transportModeMeta(transportMode).label;
+  const tollText = transportMode === 'driving' ? ` · 过路费约 ${Number(record.tolls || 0).toFixed(0)} 元` : '';
+  $('#routeDetail').innerHTML = `<b>${escapeHtml(entry.title || title)}</b><br><span>${escapeHtml(entry.date || '')}${entry.start ? ` · ${escapeHtml(entry.start)}–${escapeHtml(entry.end || '')}` : ''}</span><br>${escapeHtml(modeLabel)}：${(Number(record.distance || 0) / 1000).toFixed(1)} 公里 · ${fmt(Number(record.duration || 0))}${tollText}。${entry.detail ? `<br><small>${escapeHtml(entry.detail)}</small>` : ''}<small>查询于 ${new Date(record.queriedAt).toLocaleString('zh-CN')}${transportMode === 'driving' && record.queryPeriod === 'night' ? '（夜间结果，建议白天重查）' : ''}；地图点击不会重新计算。</small>`;
 }
 function showEventDetail(entry, extra = '') {
   const place = state.locations.find(item => item.id === entry.locationId);
@@ -1812,7 +1822,10 @@ function updateEditorRouteQueryState(route) {
   }
   button.textContent = '重新生成高德路线';
   status.hidden = false;
-  status.textContent = `现有高德结果：${driveTravelMeta(route?.travelMode || record.travelMode).label} · ${(Number(record.distance || 0) / 1000).toFixed(1)} 公里 · ${fmt(Number(record.duration || 0))} · 过路费约 ${Number(record.tolls || 0).toFixed(0)} 元 · 查询于 ${new Date(record.queriedAt).toLocaleString('zh-CN')}${record.queryPeriod === 'night' ? '（夜间结果，建议白天重查）' : ''}`;
+  const transportMode = normalizedTransportMode(route?.transportMode || record.transportMode);
+  const modeLabel = transportMode === 'driving' ? driveTravelMeta(route?.travelMode || record.travelMode).label : transportModeMeta(transportMode).label;
+  const tollText = transportMode === 'driving' ? ` · 过路费约 ${Number(record.tolls || 0).toFixed(0)} 元` : '';
+  status.textContent = `现有高德结果：${modeLabel} · ${(Number(record.distance || 0) / 1000).toFixed(1)} 公里 · ${fmt(Number(record.duration || 0))}${tollText} · 查询于 ${new Date(record.queriedAt).toLocaleString('zh-CN')}${transportMode === 'driving' && record.queryPeriod === 'night' ? '（夜间结果，建议白天重查）' : ''}`;
 }
 function updateEditorFieldVisibility() {
   const type = $('#editorType').value, isDrive = type === 'drive', isFlight = type === 'flight';
@@ -1823,6 +1836,17 @@ function updateEditorFieldVisibility() {
   weatherFields.hidden = false;
   $('#editorAddress').closest('label').hidden = isFlight;
   if (!isDrive) pendingEditorRoute = null;
+}
+function updateRouteTransportModeUi() {
+  const mode = normalizedTransportMode($('#routeTransportMode')?.value);
+  const isDriving = mode === 'driving', isTransit = mode === 'transit';
+  $('#routeTravelModeField').hidden = !isDriving;
+  $('#routeTransitCities').hidden = !isTransit;
+  $('#routeWaypointsField').hidden = !isDriving;
+  $('#addRouteWaypoint').hidden = !isDriving;
+  $('#routeWaypointOrder').hidden = !isDriving;
+  const hint = $('#routeModeHint');
+  if (hint) hint.textContent = isDriving ? '自驾支持途经点和过路费估算；更改方式或策略后请重新获取路线。' : isTransit ? '公共交通需要起点城市；跨城时还需填写终点城市，暂不支持途经点。' : `${transportModeMeta(mode).label}路线按高德当前可用方案计算，暂不支持途经点。`;
 }
 function updateEditorWeatherState(entry) {
   const status = $('#editorWeatherStatus'), button = $('#queryEditorWeather');
@@ -1899,12 +1923,13 @@ function openScheduleEditor(index, isNew = false) {
   $('#routeLibrarySelect').innerHTML = `<option value="">新建路线 / 暂不选择</option>${state.routes.map(route => `<option value="${route.id}">${escapeHtml(route.name || '未命名路线')}</option>`).join('')}`;
   const eventLinks = entry.routeLinks || {}; const sharedRoute = routeForScheduleEvent(entry); const links = sharedRoute ? { ...eventLinks, ...sharedRoute } : eventLinks;
   editorWaypointOrder = [...(links.viaPlaceIds || [])];
-  $('#routeLibrarySelect').value = eventLinks.routeId || ''; $('#routeTravelMode').value = normalizedTravelMode(links.travelMode); $('#routeOrigin').value = links.originPlaceId || ''; $('#routeDestination').value = links.destinationPlaceId || ''; $('#routeOriginName').value = links.customOrigin?.name || ''; $('#routeOriginAddress').value = links.customOrigin?.address || ''; $('#routeDestinationName').value = links.customDestination?.name || ''; $('#routeDestinationAddress').value = links.customDestination?.address || ''; [...$('#routeWaypoints').options].forEach(option => { option.selected = editorWaypointOrder.includes(option.value); }); renderWaypointOrder();
+  $('#routeLibrarySelect').value = eventLinks.routeId || ''; $('#routeTransportMode').value = normalizedTransportMode(links.transportMode); $('#routeTravelMode').value = normalizedTravelMode(links.travelMode); $('#routeTransitCity').value = links.transit?.city || ''; $('#routeTransitCityd').value = links.transit?.cityd || ''; $('#routeOrigin').value = links.originPlaceId || ''; $('#routeDestination').value = links.destinationPlaceId || ''; $('#routeOriginName').value = links.customOrigin?.name || ''; $('#routeOriginAddress').value = links.customOrigin?.address || ''; $('#routeDestinationName').value = links.customDestination?.name || ''; $('#routeDestinationAddress').value = links.customDestination?.address || ''; [...$('#routeWaypoints').options].forEach(option => { option.selected = editorWaypointOrder.includes(option.value); }); renderWaypointOrder();
   bindLocationSearch('routeOriginSearch', 'routeOrigin'); bindLocationSearch('routeDestinationSearch', 'routeDestination');
   const flight = entry.flightInfo || {};
   $('#editorFlightNumber').value = flight.flightNumber || ''; $('#editorFlightArrivalDate').value = flight.arrivalDate || entry.date; $('#editorFlightDeparture').value = flight.departureAirport || ''; $('#editorFlightArrival').value = flight.arrivalAirport || ''; $('#editorFlightDepartureTerminal').value = flight.departureTerminal || ''; $('#editorFlightArrivalTerminal').value = flight.arrivalTerminal || '';
   $('#editorFlightStopoverAirport').value = flight.stopoverAirport || ''; $('#editorFlightStopoverArrivalTime').value = flight.stopoverArrivalTime || ''; $('#editorFlightStopoverDepartureTime').value = flight.stopoverDepartureTime || '';
   updateEditorFieldVisibility();
+  updateRouteTransportModeUi();
   updateEditorRouteQueryState(sharedRoute);
   updateEditorWeatherState(entry);
   $('#eventEditor').showModal();
@@ -2023,14 +2048,19 @@ $('#editorCancel').onclick = cancelScheduleEditor;
 editorDeleteButton.onclick = () => deleteScheduleEvent(editingScheduleIndex);
 $('#eventEditor').oncancel = event => { event.preventDefault(); cancelScheduleEditor(); };
 $('#editorType').onchange = updateEditorFieldVisibility;
+$('#routeTransportMode').onchange = updateRouteTransportModeUi;
 $('#queryEditorWeather').onclick = () => queryEventWeather(editingScheduleIndex);
 $('#routeLibrarySelect').onchange = event => {
   pendingEditorRoute = null;
   const route = state.routes.find(item => item.id === event.target.value); if (!route) return;
+  $('#routeTransportMode').value = normalizedTransportMode(route.transportMode);
+  $('#routeTravelMode').value = normalizedTravelMode(route.travelMode);
+  $('#routeTransitCity').value = route.transit?.city || ''; $('#routeTransitCityd').value = route.transit?.cityd || '';
   $('#routeOrigin').value = route.originPlaceId || ''; $('#routeDestination').value = route.destinationPlaceId || '';
   $('#routeOriginName').value = ''; $('#routeOriginAddress').value = ''; $('#routeDestinationName').value = ''; $('#routeDestinationAddress').value = '';
   editorWaypointOrder = [...(route.viaPlaceIds || [])];
   [...$('#routeWaypoints').options].forEach(option => { option.selected = editorWaypointOrder.includes(option.value); }); renderWaypointOrder();
+  updateRouteTransportModeUi();
   updateEditorRouteQueryState(route);
 };
 $('#resolveEditorPlace').onclick = async event => {
@@ -2080,13 +2110,16 @@ $('#resolveEditorRoute').onclick = async event => {
       if (![...select.options].some(option => option.value === place.id)) select.append(new Option(`${placeTypeName(place.type)} · ${place.name}`, place.id));
       select.value = place.id;
     });
-    const viaPlaceIds = [...editorWaypointOrder];
-    const links = { originPlaceId: origin.id, destinationPlaceId: destination.id, viaPlaceIds, travelMode: normalizedTravelMode($('#routeTravelMode').value) };
+    const transportMode = normalizedTransportMode($('#routeTransportMode').value);
+    const viaPlaceIds = transportMode === 'driving' ? [...editorWaypointOrder] : [];
+    const transit = transportMode === 'transit' ? { city: $('#routeTransitCity').value.trim(), cityd: $('#routeTransitCityd').value.trim() } : undefined;
+    if (transportMode === 'transit' && !transit.city) throw new Error('公共交通请填写公交起点城市。');
+    const links = { originPlaceId: origin.id, destinationPlaceId: destination.id, viaPlaceIds, transportMode, travelMode: normalizedTravelMode($('#routeTravelMode').value), transit };
     const selectedRoute = state.routes.find(item => item.id === $('#routeLibrarySelect').value);
     const routeName = $('#editorName').value.trim() || `${origin.name} → ${destination.name}`;
     button.textContent = selectedRoute?.amap ? '正在重新生成高德路线预览…' : '正在获取高德路线预览…';
     const waypoints = viaPlaceIds.map(placeId => state.locations.find(place => place.id === placeId)).filter(place => place?.address);
-    const path = await calculateDriveRoute([origin, ...waypoints, destination], null, routeName, false, links.travelMode);
+    const path = await calculateDriveRoute([origin, ...waypoints, destination], null, routeName, false, links.travelMode, links.transportMode, links.transit);
     if (!path) throw new Error('高德暂时无法生成这条路线。');
     pendingEditorRoute = { links, name: routeName, amap: path.amap };
     updateEditorRouteQueryState({ amap: path.amap });
@@ -2096,7 +2129,7 @@ $('#resolveEditorRoute').onclick = async event => {
 };
 $('#editorForm').onsubmit = async event => {
   event.preventDefault(); const index = editingScheduleIndex; if (!Number.isInteger(index) || !state.schedule[index]) return;
-  const type = $('#editorType').value; let routeLinks = type === 'drive' ? { originPlaceId: $('#routeOrigin').value || undefined, destinationPlaceId: $('#routeDestination').value || undefined, customOrigin: $('#routeOriginAddress').value.trim() ? { name: $('#routeOriginName').value.trim() || '自定义起点', address: $('#routeOriginAddress').value.trim() } : undefined, customDestination: $('#routeDestinationAddress').value.trim() ? { name: $('#routeDestinationName').value.trim() || '自定义终点', address: $('#routeDestinationAddress').value.trim() } : undefined, viaPlaceIds: [...editorWaypointOrder], travelMode: normalizedTravelMode($('#routeTravelMode').value) } : undefined;
+  const type = $('#editorType').value; const transportMode = normalizedTransportMode($('#routeTransportMode').value); let routeLinks = type === 'drive' ? { originPlaceId: $('#routeOrigin').value || undefined, destinationPlaceId: $('#routeDestination').value || undefined, customOrigin: $('#routeOriginAddress').value.trim() ? { name: $('#routeOriginName').value.trim() || '自定义起点', address: $('#routeOriginAddress').value.trim() } : undefined, customDestination: $('#routeDestinationAddress').value.trim() ? { name: $('#routeDestinationName').value.trim() || '自定义终点', address: $('#routeDestinationAddress').value.trim() } : undefined, viaPlaceIds: transportMode === 'driving' ? [...editorWaypointOrder] : [], transportMode, travelMode: normalizedTravelMode($('#routeTravelMode').value), transit: transportMode === 'transit' ? { city: $('#routeTransitCity').value.trim(), cityd: $('#routeTransitCityd').value.trim() } : undefined } : undefined;
   let title = $('#editorName').value.trim(); const address = $('#editorAddress').value.trim();
   let locationId = type === 'drive' || type === 'flight' ? undefined : ($('#eventLocation').value || undefined);
   if (type !== 'drive' && type !== 'flight' && address) {
