@@ -1321,15 +1321,10 @@ async function showDayOverview(date) {
     line.on('mouseover', () => line.setStyle({ weight: Math.max(4, overviewRouteWeight(line._routeAllDates) + 2), opacity: 1 }));
     line.on('mouseout', () => line.setStyle({ ...overviewStyle, weight: overviewRouteWeight(line._routeAllDates) }));
     line.on('click', clickEvent => {
+      // 地图总览中的路线与时间表卡片使用完全相同的选中行为：只高亮和展示已保存的信息。
+      // skipDriveQuery 避免一次点击又发起高德请求。
+      L.DomEvent.stop(clickEvent);
       focusScheduleEvent(event.scheduleIndex, { skipDriveQuery: true });
-      if (!route?.id) return;
-      const popup = document.createElement('div'); popup.innerHTML = `<b>${escapeHtml(route.name || event.title || '当前路线')}</b><br><small>${event.date} · ${escapeHtml(event.title || '')}</small>`;
-      if (!isShareMode) {
-        const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '删除这条通用路线'; remove.style.cssText = 'display:block;margin-top:8px;background:#fff4f1;color:#a44435;border:1px solid #dfa99f;padding:5px 8px;font-size:11px';
-        remove.onclick = () => { if (!confirm(`确定删除通用路线“${route.name || event.title}”吗？关联事件会保留，但会解除路线关联。`)) return; removeRoute(route.id); map.closePopup(); };
-        popup.append(remove);
-      }
-      L.popup().setLatLng(clickEvent.latlng).setContent(popup).openOn(map);
     });
     line.addTo(dayOverviewLayer);
     line._routeArrowMarkers = addRouteDirectionArrows(displayLatLngs, overviewStyle.color, event, routeIndex);
