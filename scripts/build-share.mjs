@@ -47,7 +47,7 @@ let index = await readFile(indexPath, 'utf8');
 index = index
   .replaceAll('href="/', 'href="./')
   .replaceAll('src="/', 'src="./')
-  .replace('<script src="./plans.js"></script>', '<script src="./share-config.js"></script><script src="./plans.js"></script>');
+  .replace('<script type="module" src="./app.js"></script>', '<script src="./share-config.js"></script><script type="module" src="./app.js"></script>');
 await writeFile(indexPath, index, 'utf8');
 
 console.log(`已构建只读共享页：docs（数据更新时间：${updatedAt}）`);
