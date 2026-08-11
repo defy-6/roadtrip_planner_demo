@@ -4,8 +4,36 @@ const shareAssetPath = isShareMode ? './' : '/';
 if (isShareMode) document.documentElement.classList.add('share-mode');
 const itemsEl = document.querySelector('#items');
 const template = document.querySelector('#itemTpl');
-const state = { items: [], dragging: null, schedule: [], locations: [], routes: [], versionKey: 'a', preferences: { pace: '适中', vehicle: '自驾', buffer: '30' }, dayFilter: '', selectedIndex: null };
+const state = { items: [], dragging: null, schedule: [], locations: [], routes: [], versionKey: 'xinjiang-roadtrip', plans: [], preferences: { pace: '适中', vehicle: '自驾', buffer: '30' }, dayFilter: '', selectedIndex: null };
 const $ = (s, el = document) => el.querySelector(s);
+const defaultPlanId = 'xinjiang-roadtrip';
+function planIdFromName(name) { return `${String(name || 'plan').trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '') || 'plan'}-${crypto.randomUUID().slice(0, 8)}`; }
+function normalizePlanContainer(raw = {}) {
+  if (Array.isArray(raw.plans) && raw.plans.length) {
+    const plans = raw.plans.map(plan => ({ id: plan.id, name: plan.name || '未命名计划' })).filter(plan => plan.id);
+    const versions = Object.fromEntries(plans.map(plan => [plan.id, raw.versions?.[plan.id]]).filter(([, snapshot]) => snapshot));
+    const activeVersion = versions[raw.activeVersion] ? raw.activeVersion : plans.find(plan => versions[plan.id])?.id;
+    return { ...raw, plans, versions, activeVersion, sharedSchedule: {} };
+  }
+  const legacy = raw.versions?.b || raw.versions?.a || Object.values(raw.versions || {}).find(Boolean) || raw;
+  if (!legacy?.schedule && !legacy?.items) return { ...raw, plans: [], versions: {}, sharedSchedule: {} };
+  const snapshot = { ...structuredClone(legacy), name: '新疆自驾游', planKey: defaultPlanId };
+  return { ...raw, activeVersion: defaultPlanId, plans: [{ id: defaultPlanId, name: '新疆自驾游' }], versions: { [defaultPlanId]: snapshot }, sharedSchedule: {} };
+}
+function renderPlanSelect() {
+  const select = $('#planSelect'); if (!select) return;
+  select.innerHTML = state.plans.map(plan => `<option value="${escapeHtml(plan.id)}">${escapeHtml(plan.name)}</option>`).join('');
+  select.value = state.versionKey;
+  $('#deletePlanBtn').disabled = state.plans.length <= 1;
+}
+function setPlanCatalog(container) {
+  const normalized = normalizePlanContainer(container);
+  state.plans = normalized.plans || [];
+  if (!state.plans.length) state.plans = [{ id: defaultPlanId, name: '新疆自驾游' }];
+  state.versionKey = normalized.activeVersion && state.plans.some(plan => plan.id === normalized.activeVersion) ? normalized.activeVersion : state.plans[0].id;
+  renderPlanSelect();
+  return normalized;
+}
 document.head.append(Object.assign(document.createElement('link'), { rel: 'stylesheet', href: `${shareAssetPath}types.css` }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.locations-panel{margin-top:18px;padding-top:16px;border-top:1px solid #e4e6df}.locations-panel h3{margin:0;font-size:15px}.places{display:grid;gap:9px;margin-top:10px}.place-card{display:grid;gap:6px;padding:10px;border:1px dashed #cdd9d0;border-radius:8px;background:#fbfdfb}.place-card>div{display:flex;align-items:center;gap:7px}.place-card b{font-size:13px}.place-type{padding:2px 5px;border-radius:4px;background:#eee2f6;color:#58366c;font-size:10px;font-weight:700}.place-card input,.place-card textarea{width:100%;border:0;border-bottom:1px solid #e6e6e1;padding:4px 0;background:transparent;font:12px inherit}.place-card textarea{height:28px}.place-card button{justify-self:start;padding:4px 7px;background:transparent;border:1px solid #9dbaaa;border-radius:5px;color:#1d5b46;font:12px inherit}.place-card .place-delete{color:#9a5346;border-color:#dcb7b0}.event-place-link{display:block;margin-top:-2px;color:#607569;font-size:11px}.event-edit{margin-top:2px;justify-self:start;padding:4px 7px;background:#eff5ef;border:1px solid #9dbaaa;border-radius:5px;color:#1d5b46;font:12px inherit;cursor:pointer}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.calendar-block.compact{padding:1px 5px;line-height:1}.calendar-block.compact time{font-size:10px;white-space:nowrap}.calendar-block.compact em,.calendar-block.compact b,.calendar-block.compact small{display:none}' }));
@@ -208,7 +236,7 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.map-expand{left:12px!important;right:auto!important;z-index:1100!important}@media(min-width:981px){.schedule-panel,.content,.locations-panel{height:100%!important;max-height:100%!important;align-self:stretch!important;overflow:hidden!important}.schedule-panel .schedule{overflow:hidden}.content>.map-panel{overflow:hidden}}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.map-day-control{position:absolute;left:72px;top:12px;z-index:1100;display:flex;align-items:center;gap:5px;padding:4px 6px;border:1px solid #cbd8cf;border-radius:7px;background:#fffdf8eb;box-shadow:0 2px 8px #173c3220;color:#315540;font-size:9px}.map-day-control span{white-space:nowrap}.map-day-control select{max-width:132px;border:0;background:transparent;color:#173c32;font:10px inherit;outline:0}@media(max-width:980px){.map-day-control{left:12px;top:54px}}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: ':root{--text-xs:clamp(9px,.62vw,11px);--text-sm:clamp(10px,.72vw,12px);--text-md:clamp(12px,.86vw,14px);--text-lg:clamp(15px,1.15vw,19px);--text-xl:clamp(22px,2vw,32px)}body{font-size:var(--text-md)}header h1{font-size:var(--text-xl)!important}.hero #tripName{font-size:var(--text-lg)!important}.hero p,.route-stat small{font-size:var(--text-sm)!important}.route-stat strong{font-size:clamp(18px,1.65vw,27px)!important}.workspace-panel{container-type:inline-size}.schedule-panel>.aside-head h2,.locations-panel>.aside-head h3{font-size:clamp(14px,1.4cqw,19px)!important}.schedule-panel>.aside-head button,.schedule-panel>.aside-head select,.schedule-panel #scheduleHint,.location-toolbar input,.location-toolbar select,.location-toolbar button,.batch-add summary,.batch-add button{font-size:clamp(9px,1.05cqw,12px)!important}.calendar-head b{font-size:clamp(12px,1.45cqw,16px)!important}.calendar-head small,.time-label{font-size:clamp(9px,1.05cqw,12px)!important}.calendar-block{font-size:clamp(10px,1.18cqw,13px)!important}.calendar-block time{font-size:clamp(9px,1.08cqw,12px)!important}.calendar-block b{font-size:clamp(10px,1.22cqw,14px)!important}.calendar-block small{font-size:clamp(8px,1cqw,11px)!important}.calendar-block em{font-size:clamp(8px,.92cqw,10px)!important}.place-card b{font-size:clamp(11px,1.5cqw,15px)!important}.place-card input,.place-card textarea,.place-card button,.place-photo-action{font-size:clamp(9px,1.2cqw,12px)!important}.place-type,.resolved-place,.place-card .hint{font-size:clamp(8px,1.05cqw,11px)!important}.route-detail{font-size:clamp(9px,1.12cqw,12px)!important}.route-detail b{font-size:clamp(10px,1.25cqw,14px)!important}.leaflet-popup-content{font-size:clamp(11px,.8vw,13px);line-height:1.45}@container (min-width:700px){.calendar-block{padding:7px 9px}.calendar-block b{line-height:1.3}.calendar-block small{-webkit-line-clamp:3}.schedule-panel>.aside-head{padding-bottom:4px}.locations-panel>.places{gap:12px}.place-card{gap:8px;padding:11px}.place-photo-preview{height:130px}}@container (max-width:360px){.schedule-panel>.aside-head{align-items:flex-start!important}.schedule-panel>.aside-head>div:last-child{max-width:68%;justify-content:flex-end}.calendar-block{padding:4px 5px}.calendar-block small{-webkit-line-clamp:1}.locations-panel>p.hint{line-height:1.25}.location-toolbar{gap:3px}.place-card{gap:5px}.place-photo-preview{height:78px}}' }));
-document.head.append(Object.assign(document.createElement('style'), { textContent: '.share-mode #addScheduleBtn,.share-mode #importFlightBtn,.share-mode #updateScheduleWeather,.share-mode #addPlaceBtn,.share-mode #selectAllPlaces,.share-mode #resolveSelectedPlaces,.share-mode #deleteSelectedPlaces,.share-mode .batch-add,.share-mode .content>aside{display:none!important}.share-mode #tripName{pointer-events:none;border-color:transparent!important;background:transparent!important}.share-mode .place-card .place-select,.share-mode .place-card .place-type-select,.share-mode .place-card .place-name,.share-mode .place-card .place-address,.share-mode .place-card .place-note,.share-mode .place-card .place-photo-action,.share-mode .place-card .place-save,.share-mode .place-card .place-resolve,.share-mode .place-card .place-delete{display:none!important}.share-mode .place-card{grid-template-columns:1fr!important}.share-mode .place-card .place-map{display:inline-flex!important}.share-mode .place-card .place-photo-preview,.share-mode .place-card .place-photo-placeholder,.share-mode .place-card .resolved-place{grid-column:1/-1}.share-mode .locations-panel>p.hint::after{content:" · 共享页面为只读，数据以发布时版本为准。"}.share-mode .hero{box-shadow:inset 3px 0 #d4a72c}.share-mode #fileSaveStatus{color:#8b6510!important;font-weight:700}' }));
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.share-mode #addScheduleBtn,.share-mode #importFlightBtn,.share-mode #updateScheduleWeather,.share-mode #addPlaceBtn,.share-mode #selectAllPlaces,.share-mode #resolveSelectedPlaces,.share-mode #deleteSelectedPlaces,.share-mode #newPlanBtn,.share-mode #copyPlanBtn,.share-mode #deletePlanBtn,.share-mode .batch-add,.share-mode .content>aside{display:none!important}.share-mode #tripName{pointer-events:none;border-color:transparent!important;background:transparent!important}.share-mode .place-card .place-select,.share-mode .place-card .place-type-select,.share-mode .place-card .place-name,.share-mode .place-card .place-address,.share-mode .place-card .place-note,.share-mode .place-card .place-photo-action,.share-mode .place-card .place-save,.share-mode .place-card .place-resolve,.share-mode .place-card .place-delete{display:none!important}.share-mode .place-card{grid-template-columns:1fr!important}.share-mode .place-card .place-map{display:inline-flex!important}.share-mode .place-card .place-photo-preview,.share-mode .place-card .place-photo-placeholder,.share-mode .place-card .resolved-place{grid-column:1/-1}.share-mode .locations-panel>p.hint::after{content:" · 共享页面为只读，数据以发布时版本为准。"}.share-mode .hero{box-shadow:inset 3px 0 #d4a72c}.share-mode #fileSaveStatus{color:#8b6510!important;font-weight:700}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.calendar-grid{grid-template-rows:38px auto!important}.calendar-day,.time-rail{height:var(--calendar-height)!important}.time-label{height:var(--hour-height)!important;padding-top:0!important;transform:translateY(-5px)!important}.calendar-day{background-image:repeating-linear-gradient(to bottom,transparent 0,transparent calc(var(--hour-height) - 1px),#eeeae0 var(--hour-height))!important}.schedule-panel:not(.is-expanded) .schedule-scroll{overflow-y:hidden!important}.schedule-panel:not(.is-expanded) .calendar-block{padding:1px 4px!important;border-radius:4px;line-height:1!important;white-space:nowrap;text-overflow:ellipsis}.schedule-panel:not(.is-expanded) .calendar-block time,.schedule-panel:not(.is-expanded) .calendar-block em,.schedule-panel:not(.is-expanded) .calendar-block b{display:inline!important;vertical-align:middle;white-space:nowrap}.schedule-panel:not(.is-expanded) .calendar-block time{margin-right:4px;font-size:8px!important}.schedule-panel:not(.is-expanded) .calendar-block em{margin:0 4px 0 0;padding:0 3px;font-size:7px!important}.schedule-panel:not(.is-expanded) .calendar-block b{font-size:9px!important}.schedule-panel:not(.is-expanded) .calendar-block small{display:none!important}.schedule-panel:not(.is-expanded) .calendar-block.compact>*{display:none!important}.schedule-panel:not(.is-expanded) .calendar-block.compact{min-height:0;border-radius:2px}.schedule-panel.is-expanded .schedule-scroll{overflow-y:auto!important}.schedule-panel.is-expanded .calendar-grid{grid-template-rows:48px auto!important}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '@media(min-width:981px){main{grid-template-rows:74px minmax(0,1fr)!important;gap:10px 12px!important}main>header{grid-column:1/-1!important;grid-row:1!important;height:74px;display:grid!important;grid-template-columns:92px minmax(300px,1fr) auto;gap:12px;align-items:center;padding:0 4px}header>div:first-child{align-self:center}header h1{font-size:25px!important}.top-actions{justify-self:end}.top-actions .hint{max-width:165px;overflow:hidden;text-overflow:ellipsis}.hero{grid-column:auto!important;grid-row:auto!important;height:54px;min-width:0;margin:0!important;padding:7px 12px!important;border:1px solid #d5e2d9;border-radius:10px!important;background:#eaf2ed!important;background-image:none!important;color:#173c32!important;display:flex!important;align-items:center;justify-content:space-between;gap:12px}.hero>div:first-child{min-width:0;display:block}.hero #tripName{width:min(310px,28vw)!important;color:#173c32!important;border-color:#87aa98;font-size:14px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hero p{display:none}.hero .route-stat{min-width:0;display:grid!important;grid-template-columns:auto auto;gap:0 8px;text-align:right}.hero .route-stat span{font-size:8px}.hero .route-stat strong{font-size:18px!important;line-height:1}.hero .route-stat small{grid-column:1/-1;max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:8px!important}.schedule-panel,.content,.locations-panel{grid-row:2!important}.panel-expanded .workspace-panel.is-expanded{grid-row:2!important}.locations-panel:not(.is-expanded) .place-card{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px!important;padding:7px!important}.locations-panel:not(.is-expanded) .place-card>div{grid-column:1/-1}.locations-panel:not(.is-expanded) .place-type-select{grid-column:1}.locations-panel:not(.is-expanded) .place-name{grid-column:2/-1}.locations-panel:not(.is-expanded) .place-address,.locations-panel:not(.is-expanded) .resolved-place{grid-column:1/-1}.locations-panel:not(.is-expanded) .place-photo-placeholder,.locations-panel:not(.is-expanded) .place-note{display:none}.locations-panel:not(.is-expanded) .place-photo-preview{grid-column:1/-1;height:62px}.locations-panel:not(.is-expanded) .place-photo-action{grid-column:1/-1}.locations-panel:not(.is-expanded) .place-card button{width:100%;padding:4px 3px!important;white-space:nowrap}.locations-panel:not(.is-expanded) .resolved-place{max-height:34px;overflow:hidden;padding:4px 6px}.locations-panel:not(.is-expanded) .place-card input,.locations-panel:not(.is-expanded) .place-card select{min-width:0;padding:3px 2px}.locations-panel.is-expanded .place-photo-placeholder{display:grid}}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '@media(min-width:981px){main{grid-template-columns:minmax(290px,32%) minmax(360px,42%) minmax(240px,26%)!important}.schedule-panel .calendar-grid[style*="--grid-width:100%"]{width:100%;min-width:100%}.schedule-panel .calendar-grid[style*="--grid-width:100%"]{grid-template-columns:52px minmax(0,1fr)!important}}' }));
@@ -565,16 +593,19 @@ function removeRoute(routeId) {
   state.routes = state.routes.filter(route => route.id !== routeId);
   const unlink = schedule => (schedule || []).forEach(event => { if (event.routeLinks?.routeId === routeId) delete event.routeLinks.routeId; });
   unlink(state.schedule);
-  ['a', 'b'].forEach(key => {
+  state.plans.forEach(plan => {
+    const key = plan.id;
     const snapshot = parseStoredJson(versionStorageKey(key), null);
     if (!snapshot) return;
     snapshot.routes = (snapshot.routes || []).filter(route => route.id !== routeId);
     unlink(snapshot.schedule);
     localStorage.setItem(versionStorageKey(key), JSON.stringify(snapshot));
   });
-  const shared = readSharedSchedule();
-  unlink(Object.values(shared));
-  localStorage.setItem(sharedScheduleStorageKey, JSON.stringify(shared));
+  if (!state.plans.length) {
+    const shared = readSharedSchedule();
+    unlink(Object.values(shared));
+    localStorage.setItem(sharedScheduleStorageKey, JSON.stringify(shared));
+  }
   renderSchedule(state.schedule); refreshEventCards(); save();
   showDayOverview(state.dayFilter);
 }
@@ -778,6 +809,7 @@ function readSharedSchedule() {
   try { return JSON.parse(localStorage.getItem(sharedScheduleStorageKey) || '{}'); } catch { return {}; }
 }
 function applySharedSchedule(entries) {
+  if (state.plans.length) return entries;
   const shared = readSharedSchedule();
   const applied = entries.map((event, index) => {
     const sharedId = event.sharedId || (event.date < '2026-08-20' ? `shared-${index}` : undefined);
@@ -788,6 +820,7 @@ function applySharedSchedule(entries) {
   return applied.sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
 }
 function writeSharedSchedule() {
+  if (state.plans.length) return;
   const shared = {};
   state.schedule.forEach(event => { if (event.sharedId) shared[event.sharedId] = structuredClone(event); });
   localStorage.setItem(sharedScheduleStorageKey, JSON.stringify(shared));
@@ -801,10 +834,11 @@ function queueLocalFileSave() {
   fileSaveTimer = setTimeout(async () => {
     const payload = {
       activeVersion: state.versionKey,
-      versions: { a: parseStoredJson(versionStorageKey('a'), null), b: parseStoredJson(versionStorageKey('b'), null) },
+      plans: state.plans,
+      versions: Object.fromEntries(state.plans.map(plan => [plan.id, parseStoredJson(versionStorageKey(plan.id), null)]).filter(([, snapshot]) => snapshot)),
       locations: state.locations,
       routes: state.routes,
-      sharedSchedule: parseStoredJson(sharedScheduleStorageKey, {}),
+      sharedSchedule: {},
       updatedAt: new Date().toISOString()
     };
     try {
@@ -828,7 +862,7 @@ function migrateToUnifiedItems(data) {
   schedule.forEach(entry => { const matchIndex = legacy.findIndex(item => item.date === entry.date && (entry.title.includes(item.name) || item.name.includes(entry.title))); if (matchIndex >= 0) { const item = legacy.splice(matchIndex, 1)[0]; Object.assign(entry, { address: item.address, type: item.type, photo: item.photo || '', routeLinks: entry.routeLinks }); } else entry.type ||= typeForTitle(entry.title); });
   legacy.forEach(item => schedule.push({ date: item.date, start: item.startTime || '', end: item.endTime || '', title: item.name, detail: item.note || '', address: item.address, type: item.type, photo: item.photo || '' }));
   schedule.sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
-  return { ...data, schedule, items: schedule.map((entry, scheduleIndex) => ({ type: entry.type || typeForTitle(entry.title), date: entry.date, startTime: entry.start, endTime: entry.end, name: entry.title, address: entry.address || '', note: entry.detail || '', photo: entry.photo || '', scheduleIndex })), planKey: data.planKey || (data.name?.includes('方案 A') ? 'a' : data.name?.includes('方案 B') ? 'b' : '') };
+  return { ...data, schedule, items: schedule.map((entry, scheduleIndex) => ({ type: entry.type || typeForTitle(entry.title), date: entry.date, startTime: entry.start, endTime: entry.end, name: entry.title, address: entry.address || '', note: entry.detail || '', photo: entry.photo || '', scheduleIndex })), planKey: data.planKey || defaultPlanId };
 }
 function migrateLegacyLocations(data) {
   if (data.locations) return data;
@@ -1251,10 +1285,10 @@ async function showDayOverview(date) {
   }
   $('#distance').textContent = `${date ? `${date} · ` : '全程 · '}已显示 ${places.filter(place => resolved.has(place.id)).length + customPointEntries.filter(point => resolved.has(point.key)).length} 个地点 · ${displayedRouteCount} 条线路`;
 }
-function load(rawData, versionKey = rawData.planKey || 'a') {
+function load(rawData, versionKey = rawData.planKey || defaultPlanId) {
   const data = migrateFlightStopovers(repairEventNamedLocations(mergeUniversalRoutes(mergeUniversalLocations(migrateExplicitRouteLinks(migrateToPlaceModel(migrateLegacyLocations(clearInitialPendingAddresses(migrateToUnifiedItems(rawData)))))))));
-  state.versionKey = ['a', 'b'].includes(versionKey) ? versionKey : 'a';
-  $('#planSelect').value = state.versionKey; itemsEl.innerHTML = ''; $('#tripName').value = data.name || '我的自驾行程';
+  state.versionKey = state.plans.some(plan => plan.id === versionKey) ? versionKey : state.plans[0]?.id || defaultPlanId;
+  renderPlanSelect(); itemsEl.innerHTML = ''; $('#tripName').value = data.name || state.plans.find(plan => plan.id === state.versionKey)?.name || '我的自驾行程';
   state.schedule = applySharedSchedule((data.schedule || []).map(event => {
     const normalized = event.type === 'spot' && typeForTitle(event.title) !== 'spot' ? { ...event, type: typeForTitle(event.title) } : { ...event };
     if (normalized.type === 'drive') delete normalized.locationId;
@@ -1270,7 +1304,7 @@ function load(rawData, versionKey = rawData.planKey || 'a') {
     if (route) event.routeLinks = { ...links, routeId: route.id };
   });
   const usedRouteIds = new Set(state.schedule.map(event => event.routeLinks?.routeId).filter(Boolean));
-  ['a', 'b'].forEach(key => { try { const snapshot = JSON.parse(localStorage.getItem(versionStorageKey(key)) || 'null'); (snapshot?.schedule || []).forEach(event => { if (event.routeLinks?.routeId) usedRouteIds.add(event.routeLinks.routeId); }); } catch {} });
+  state.plans.forEach(plan => { try { const snapshot = JSON.parse(localStorage.getItem(versionStorageKey(plan.id)) || 'null'); (snapshot?.schedule || []).forEach(event => { if (event.routeLinks?.routeId) usedRouteIds.add(event.routeLinks.routeId); }); } catch {} });
   state.routes = state.routes.filter(route => usedRouteIds.has(route.id));
   state.preferences = { ...state.preferences, ...(data.preferences || {}) }; state.dayFilter = '';
   state.schedule.forEach((entry, scheduleIndex) => {
@@ -1286,9 +1320,10 @@ function loadPreset(key, forceOriginal = false) {
     return;
   }
   if (!forceOriginal) { const draft = localStorage.getItem(versionStorageKey(key)); if (draft) { load(JSON.parse(draft), key); renderSchedule(state.schedule); return; } }
-  const plan = PRESET_PLANS[key];
+  const presetKey = PRESET_PLANS[key] ? key : 'b';
+  const plan = PRESET_PLANS[presetKey];
   if (!plan) return;
-  state.schedule = structuredClone(PRESET_SCHEDULES[key] || []);
+  state.schedule = structuredClone(PRESET_SCHEDULES[presetKey] || []);
   const typeFor = typeForTitle;
   const sourceStops = plan.items.map(([type, date, name, address, note]) => { const [startTime, endTime] = presetNodeTimes[`${date}|${name}`] || ['', '']; return { type, date, startTime, endTime, name, address: ['hotel', 'food'].includes(type) ? '' : address, note, used: false }; });
   state.schedule.forEach(entry => {
@@ -1300,7 +1335,7 @@ function loadPreset(key, forceOriginal = false) {
   sourceStops.filter(item => !item.used && !['hotel', 'food'].includes(item.type)).forEach(item => state.schedule.push({ date: item.date, start: item.startTime || '00:00', end: item.endTime || '', title: item.name, detail: item.note, address: item.address, type: item.type }));
   state.schedule.sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
   const planItems = state.schedule.map((entry, scheduleIndex) => ({ type: entry.type || typeFor(entry.title), date: entry.date, startTime: entry.start, endTime: entry.end, name: entry.title, address: entry.address || '', note: entry.detail || '', scheduleIndex }));
-  load({ name: plan.name, items: planItems, schedule: state.schedule, locations }, key);
+  load({ name: state.plans.find(item => item.id === key)?.name || '新疆自驾游', items: planItems, schedule: state.schedule, locations }, key);
   $('#duration').textContent = '—'; $('#distance').textContent = '已载入预设行程，正在显示点位';
   showStopsOnMap(planItems);
   renderSchedule(state.schedule);
@@ -1825,10 +1860,10 @@ function removeEventFromStoredVersion(versionKey, event) {
 function deleteScheduleEvent(index) {
   if (isShareMode) return;
   const event = state.schedule[index]; if (!event || !confirm(`确定删除“${event.title}”吗？\n\n关联的通用地点和通用路线会保留。`)) return;
-  if (event.sharedId) {
+  if (event.sharedId && !state.plans.length) {
     const shared = readSharedSchedule(); delete shared[event.sharedId];
     localStorage.setItem(sharedScheduleStorageKey, JSON.stringify(shared));
-    ['a', 'b'].forEach(key => removeEventFromStoredVersion(key, event));
+    state.plans.forEach(plan => removeEventFromStoredVersion(plan.id, event));
   }
   state.schedule.splice(index, 1);
   [...itemsEl.children].forEach(node => {
@@ -2068,7 +2103,12 @@ $('#flightImportForm').onsubmit = async event => {
   addItem({ type: entry.type, date, startTime: start, endTime: end, name: entry.title, address: '', note: entry.detail, scheduleIndex: index });
   save(); renderLocations(); renderSchedule(state.schedule); applyDayFilter(); flightImporter.close(); if (submit) { submit.disabled = false; submit.textContent = '确认导入'; } focusScheduleEvent(index);
 };
-$('#addBtn').onclick=()=>addItem(); $('#tripName').oninput=save;
+$('#addBtn').onclick=()=>addItem();
+$('#tripName').oninput = () => {
+  const plan = state.plans.find(item => item.id === state.versionKey);
+  if (plan) plan.name = $('#tripName').value.trim() || '未命名计划';
+  renderPlanSelect(); save();
+};
 $('#addPlaceBtn').onclick = async () => {
   const place = await confirmNewPlace({ type: placeTypeFilter || 'spot' });
   if (!place) return;
@@ -2161,7 +2201,31 @@ $('#mapDayFilter').onchange = event => changeDayFilter(event.target.value);
 $('#planSelect').onchange = async e => {
   const key = e.target.value;
   loadPreset(key);
-  await ensureFlightAirportLinks();
+  if (!isShareMode) await ensureFlightAirportLinks();
+};
+$('#newPlanBtn').onclick = () => {
+  if (isShareMode) return;
+  const name = prompt('新计划名称', '新建计划'); if (!name?.trim()) return;
+  const id = planIdFromName(name);
+  const snapshot = { name: name.trim(), items: [], schedule: [], locations: structuredClone(state.locations), routes: structuredClone(state.routes), preferences: structuredClone(state.preferences), placeModelVersion: 1, routeLinkModeVersion: 1, planKey: id };
+  state.plans.push({ id, name: snapshot.name }); state.versionKey = id;
+  localStorage.setItem(versionStorageKey(id), JSON.stringify(snapshot)); renderPlanSelect(); load(snapshot, id); renderManualSchedule(); save();
+};
+$('#copyPlanBtn').onclick = () => {
+  if (isShareMode) return;
+  const source = currentSnapshot(); const name = prompt('复制后的计划名称', `${source.name || '未命名计划'} 副本`); if (!name?.trim()) return;
+  const id = planIdFromName(name); const snapshot = { ...structuredClone(source), name: name.trim(), planKey: id, updatedAt: new Date().toISOString() };
+  state.plans.push({ id, name: snapshot.name }); state.versionKey = id;
+  localStorage.setItem(versionStorageKey(id), JSON.stringify(snapshot)); renderPlanSelect(); load(snapshot, id); renderSchedule(state.schedule); save();
+};
+$('#deletePlanBtn').onclick = () => {
+  if (isShareMode || state.plans.length <= 1) return;
+  const plan = state.plans.find(item => item.id === state.versionKey); if (!plan || !confirm(`确定删除计划“${plan.name}”吗？此操作不可恢复。`)) return;
+  if (prompt(`为确认删除，请输入计划名称：${plan.name}`) !== plan.name) { alert('计划名称不匹配，已取消删除。'); return; }
+  localStorage.removeItem(versionStorageKey(plan.id)); state.plans = state.plans.filter(item => item.id !== plan.id);
+  state.versionKey = state.plans[0].id; renderPlanSelect(); const next = parseStoredJson(versionStorageKey(state.versionKey), null);
+  if (next) { load(next, state.versionKey); renderSchedule(state.schedule); } else loadPreset(state.versionKey);
+  save();
 };
 const geocode = (address, keyword = '') => {
   const queryKeyword = amapKeywords[keyword] || keyword;
@@ -2482,22 +2546,22 @@ function renderRouteTotals(showDetail = false) {
 $('#routeBtn').onclick = () => renderRouteTotals(true);
 async function initializePlanner() {
   let cached = isShareMode ? null : localStorage.getItem('roadtrip');
+  setPlanCatalog({});
   const hydrate = fileData => {
     if (!fileData) return;
+    const normalized = setPlanCatalog(fileData);
+    const activeKey = state.versionKey;
     if (isShareMode) {
-      const activeKey = ['a', 'b'].includes(fileData.activeVersion) ? fileData.activeVersion : 'a';
-      const active = fileData.versions?.[activeKey];
+      const active = normalized.versions?.[activeKey];
       if (active) cached = JSON.stringify(active);
       const stamp = fileData.updatedAt ? new Date(fileData.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }) : '';
       $('#fileSaveStatus').textContent = `共享只读版${stamp ? ` · 更新于 ${stamp}` : ''}`;
       return;
     }
-    if (fileData.locations) localStorage.setItem(universalLocationStorageKey, JSON.stringify(fileData.locations));
-    if (fileData.routes) localStorage.setItem(universalRouteStorageKey, JSON.stringify(fileData.routes));
-    if (fileData.sharedSchedule) localStorage.setItem(sharedScheduleStorageKey, JSON.stringify(fileData.sharedSchedule));
-    ['a', 'b'].forEach(key => { if (fileData.versions?.[key]) localStorage.setItem(versionStorageKey(key), JSON.stringify(fileData.versions[key])); });
-    const activeKey = ['a', 'b'].includes(fileData.activeVersion) ? fileData.activeVersion : 'a';
-    const active = fileData.versions?.[activeKey];
+    if (normalized.locations) localStorage.setItem(universalLocationStorageKey, JSON.stringify(normalized.locations));
+    if (normalized.routes) localStorage.setItem(universalRouteStorageKey, JSON.stringify(normalized.routes));
+    state.plans.forEach(plan => { if (normalized.versions?.[plan.id]) localStorage.setItem(versionStorageKey(plan.id), JSON.stringify(normalized.versions[plan.id])); });
+    const active = normalized.versions?.[activeKey];
     if (active) { cached = JSON.stringify(active); localStorage.setItem('roadtrip', cached); }
     const stamp = fileData.updatedAt ? new Date(fileData.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }) : '';
     $('#fileSaveStatus').textContent = '已从本地文件载入';
@@ -2507,9 +2571,9 @@ async function initializePlanner() {
     const response = await fetch('/api/planner-data'); const result = await response.json(); hydrate(result.data);
   } catch { $('#fileSaveStatus').textContent = cached ? '本地文件读取失败，已使用浏览器缓存' : '未能读取本地文件'; }
   if (cached) {
-    const data = JSON.parse(cached); const inferredKey = ['a', 'b'].includes(data.planKey) ? data.planKey : (data.name?.includes('方案 B') ? 'b' : 'a');
+    const data = JSON.parse(cached); const inferredKey = state.plans.some(plan => plan.id === data.planKey) ? data.planKey : state.versionKey;
     load(data, inferredKey); save(); state.schedule.length ? renderSchedule(state.schedule) : renderManualSchedule();
-  } else loadPreset('a');
+  } else loadPreset(state.versionKey || defaultPlanId);
   await initMap();
   if (!isShareMode) await ensureFlightAirportLinks();
   await showDayOverview('');

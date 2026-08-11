@@ -16,6 +16,21 @@ try {
   throw new Error('未找到 data/roadtrip-data.json。请先在本机打开行程并等待“已写入本地文件”提示后再构建共享页。', { cause: error });
 }
 
+// 共享页只发布当前唯一的新疆自驾游计划；兼容本地旧版 A/B 数据。
+if (!Array.isArray(plannerData.plans) || !plannerData.plans.length) {
+  const legacy = plannerData.versions?.b || plannerData.versions?.a || Object.values(plannerData.versions || {}).find(Boolean);
+  if (legacy) {
+    const id = 'xinjiang-roadtrip';
+    plannerData = {
+      ...plannerData,
+      activeVersion: id,
+      plans: [{ id, name: '新疆自驾游' }],
+      versions: { [id]: { ...legacy, name: '新疆自驾游', planKey: id } },
+      sharedSchedule: {}
+    };
+  }
+}
+
 const updatedAt = plannerData.updatedAt || new Date().toISOString();
 const shareConfig = [
   'window.__ROADTRIP_SHARE_MODE__ = true;',
