@@ -492,6 +492,30 @@ async function clearMapSelection() {
   $('#mapDayFilter').value = date || '';
 }
 
+async function showPlaceOnMap(placeId) {
+  const place = state.locations.find(item => item.id === placeId);
+  if (!place) return;
+  if (!map && !(await initMap())) return;
+  let point = place.resolved;
+  if (!point?.location) {
+    if (isShareMode) { alert('共享版本中该地点尚未保存坐标。'); return; }
+    if (!place.address) { alert('请先在编辑窗口中填写详细地址并查询高德位置。'); return; }
+    try {
+      const result = await geocode(place.address, place.name);
+      point = { name: result.name || place.name, address: result.formatted_address || place.address, location: result.location };
+      place.resolved = point;
+      save();
+    } catch (error) { alert(error.message || '暂时无法定位这个地点。'); return; }
+  }
+  const [lng, lat] = mapCoords(...point.location.split(',').map(Number));
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  setOverviewFocusOpacity(true);
+  routeLayer = L.featureGroup().addTo(map);
+  L.circleMarker([lat, lng], { radius: 14, color: '#fff', weight: 5, fillColor: placeTypeColor(place.type), fillOpacity: 1, className: 'selected-map-point' }).addTo(routeLayer);
+  map.flyTo([lat, lng], Math.max(map.getZoom(), 11), { animate: true, duration: .45 });
+  L.popup().setLatLng([lat, lng]).setContent(`<b>${escapeHtml(place.name || '未命名地点')}</b><br>${escapeHtml(point.address || place.address || '')}`).openOn(map);
+}
+
 function showRouteOnMap(path, locations, nodes, routeInfo = {}) {
   if (!map) return;
   const coordinates = path.steps.flatMap(step => step.polyline.split(';').map(pair => mapCoords(...pair.split(',').map(Number))));
@@ -832,8 +856,22 @@ function renderLocations() {
   places.innerHTML = visibleLocations.length ? `${photoPlaces.length ? `<div class="place-grid place-grid-photos">${photoPlaces.map(renderPlaceCard).join('')}</div>` : ''}${plainPlaces.length ? `<div class="place-grid place-grid-plain">${plainPlaces.map(renderPlaceCard).join('')}</div>` : ''}` : '<p class="hint">没有符合条件的地点。</p>';
   places.querySelectorAll('.place-card').forEach(card => {
     $('.place-select', card)?.addEventListener('change', event => { event.target.checked ? selectedPlaceIds.add(card.dataset.placeId) : selectedPlaceIds.delete(card.dataset.placeId); });
-    card.onclick = event => { if (!event.target.closest('.place-select')) openPlaceEditor(card.dataset.placeId); };
-    card.onkeydown = event => { if ((event.key === 'Enter' || event.key === ' ') && !event.target.closest('.place-select')) { event.preventDefault(); openPlaceEditor(card.dataset.placeId); } };
+    let clickTimer;
+    card.onclick = event => {
+      if (event.target.closest('.place-select')) return;
+      clearTimeout(clickTimer);
+      clickTimer = setTimeout(() => showPlaceOnMap(card.dataset.placeId), 190);
+    };
+    card.ondblclick = event => {
+      if (event.target.closest('.place-select')) return;
+      clearTimeout(clickTimer);
+      openPlaceEditor(card.dataset.placeId);
+    };
+    card.onkeydown = event => {
+      if (event.target.closest('.place-select')) return;
+      if (event.key === 'Enter') { event.preventDefault(); openPlaceEditor(card.dataset.placeId); }
+      if (event.key === ' ') { event.preventDefault(); showPlaceOnMap(card.dataset.placeId); }
+    };
     return;
     const update = () => {
       const place = state.locations.find(item => item.id === card.dataset.placeId); if (!place) return;
