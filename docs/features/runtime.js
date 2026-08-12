@@ -244,6 +244,11 @@ function renderNewPlaceCurrentPhoto(photo = '') {
   if (!photo) { container.hidden = true; image.removeAttribute('src'); return; }
   image.src = photo; container.hidden = false;
 }
+function refreshPlaceQueryLabels({ hasPhoto = false, hasDetails = false } = {}) {
+  $('#queryNewPlaceLocation').textContent = pendingNewPlaceResolved?.location ? '重新查询位置' : '查询高德位置';
+  $('#queryNewPlacePhotos').textContent = hasPhoto || pendingNewPlacePhotos.length ? '重新查询图片' : '查询高德图片';
+  $('#queryNewPlaceDetails').textContent = hasDetails ? '重新获取 POI 详情' : '获取 POI 详情';
+}
 function fileToDataUrl(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); }); }
 function confirmNewPlace(initial = {}) {
   $('#placeEditorForm').reset();
@@ -252,6 +257,7 @@ function confirmNewPlace(initial = {}) {
   pendingNewPlaceResolved = null; pendingNewPlacePhotos = []; pendingNewPlacePhotoIndex = -1;
   $('#newPlacePhotoCandidates').hidden = true; $('#newPlacePhotoCandidates').replaceChildren();
   renderNewPlaceResolved(); renderNewPlaceCurrentPhoto();
+  refreshPlaceQueryLabels();
   $('#newPlaceAmapStatus').textContent = '填写名称和完整地址后可分别查询；保存不会自动调用高德。';
   $('#newPlaceType').innerHTML = placeTypeOptionsHtml();
   $('#newPlaceType').value = initial.type || placeTypeFilter || 'spot';
@@ -274,6 +280,7 @@ function openPlaceEditor(placeId) {
   $('#newPlaceType').innerHTML = placeTypeOptionsHtml(); $('#newPlaceType').value = place.type || 'spot';
   $('#newPlaceName').value = place.name || ''; $('#newPlaceAddress').value = place.address || ''; $('#newPlaceNote').value = place.note || '';
   $('#newPlaceIntro').value = place.poiDetails?.intro || ''; $('#newPlaceOpenTime').value = place.poiDetails?.openTime || ''; $('#newPlaceRating').value = place.poiDetails?.rating || ''; $('#newPlaceReferenceCost').value = place.poiDetails?.referenceCost || ''; $('#newPlaceTicketPrice').value = place.poiDetails?.ticketPrice || ''; $('#newPlaceTags').value = place.poiDetails?.tags || '';
+  refreshPlaceQueryLabels({ hasPhoto: Boolean(place.photo), hasDetails: Object.values(place.poiDetails || {}).some(Boolean) });
   renderNewPlaceResolved();
   $('#newPlaceAmapStatus').textContent = place.resolved ? `已定位：${place.resolved.name || place.name}。可重新查询位置、图片或 POI 详情；保存不会重复查询。` : '填写名称和完整地址后可分别查询；保存不会自动调用高德。';
   placeEditor.querySelector('h3').textContent = '编辑地点';
@@ -2372,7 +2379,7 @@ async function queryNewPlaceLocation() {
     renderNewPlaceResolved();
     $('#newPlaceAmapStatus').textContent = `已定位并回填高德完整地址。${pendingNewPlacePhotos.length ? '已保留图片候选。' : ''}`;
   } catch (error) { pendingNewPlaceResolved = null; renderNewPlaceResolved(); $('#newPlaceAmapStatus').textContent = error.message || '高德位置查询失败，请检查名称和地址。'; }
-  finally { button.disabled = false; button.textContent = '查询高德位置'; }
+  finally { button.disabled = false; refreshPlaceQueryLabels({ hasPhoto: !$('#newPlaceCurrentPhoto').hidden, hasDetails: ['newPlaceIntro', 'newPlaceOpenTime', 'newPlaceRating', 'newPlaceReferenceCost', 'newPlaceTicketPrice', 'newPlaceTags'].some(id => Boolean($(`#${id}`).value.trim())) }); }
 }
 async function queryNewPlacePhotos() {
   const name = $('#newPlaceName').value.trim(), address = $('#newPlaceAddress').value.trim();
@@ -2385,7 +2392,7 @@ async function queryNewPlacePhotos() {
     pendingNewPlacePhotos = data.photos || []; pendingNewPlacePhotoIndex = -1; renderNewPlacePhotoCandidates();
     $('#newPlaceAmapStatus').textContent = pendingNewPlacePhotos.length ? `找到 ${pendingNewPlacePhotos.length} 张高德候选图，请选择一张。` : '高德暂未返回可用图片。';
   } catch (error) { pendingNewPlacePhotos = []; pendingNewPlacePhotoIndex = -1; renderNewPlacePhotoCandidates(); $('#newPlaceAmapStatus').textContent = error.message || '高德图片查询失败，请检查名称和地址。'; }
-  finally { button.disabled = false; button.textContent = '查询高德图片'; }
+  finally { button.disabled = false; refreshPlaceQueryLabels({ hasPhoto: !$('#newPlaceCurrentPhoto').hidden, hasDetails: ['newPlaceIntro', 'newPlaceOpenTime', 'newPlaceRating', 'newPlaceReferenceCost', 'newPlaceTicketPrice', 'newPlaceTags'].some(id => Boolean($(`#${id}`).value.trim())) }); }
 }
 $('#queryNewPlaceLocation').onclick = queryNewPlaceLocation;
 $('#queryNewPlacePhotos').onclick = queryNewPlacePhotos;
@@ -2406,7 +2413,7 @@ $('#queryNewPlaceDetails').onclick = async event => {
     }
     $('#newPlaceAmapStatus').textContent = '已填入高德 Web 服务实际返回的 POI 详情；空字段表示该接口未提供。';
   } catch (error) { $('#newPlaceAmapStatus').textContent = error.message || '高德 POI 详情查询失败。'; }
-  finally { button.disabled = false; button.textContent = '获取 POI 详情'; }
+  finally { button.disabled = false; refreshPlaceQueryLabels({ hasPhoto: !$('#newPlaceCurrentPhoto').hidden, hasDetails: ['newPlaceIntro', 'newPlaceOpenTime', 'newPlaceRating', 'newPlaceReferenceCost', 'newPlaceTicketPrice', 'newPlaceTags'].some(id => Boolean($(`#${id}`).value.trim())) }); }
 };
 $('#placeEditorForm').onsubmit = async event => {
   event.preventDefault();
