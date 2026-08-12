@@ -1664,9 +1664,11 @@ async function showDayOverview(date) {
     if (date) line._routeSequenceBadge = addRouteSequenceBadge(displayLatLngs, overviewStyle.color, routeIndex + 1);
     displayedRouteCount += 1;
   });
-  // 单日总览也展示已关联地点的缩略图：路线起终点、途经点与普通活动地点共用同一套去重/避让逻辑。
-  // 全部日期总览不展示，避免跨天行程把地图遮满。
-  if (date) {
+  // 图片气泡必须在 fitBounds 完成后再按屏幕坐标避让；否则缩放会让原本不相交的气泡重新重叠。
+  let photosRendered = false;
+  const renderDayPhotoCallouts = () => {
+    if (photosRendered || requestId !== dayOverviewRequestId || !date) return;
+    photosRendered = true;
     const photoCalloutOccupied = [];
     const renderedPhotoCallouts = new Set();
     const dayRouteLatLngs = routeRenderRecords.flatMap(record => record.latLngs);
@@ -1678,13 +1680,18 @@ async function showDayOverview(date) {
       renderedPhotoCallouts.add(calloutKey);
       addSelectedPlacePhotoCallout(dayOverviewLayer, [lat, lng], place, '', photoCalloutOccupied, dayRouteLatLngs, true);
     });
-  }
+  };
   if (routeCacheChanged) save();
   renderRouteTotals();
   if (bounds.length && requestId === dayOverviewRequestId) {
     dayOverviewBounds = L.latLngBounds(bounds);
+    if (date) {
+      // 不依赖动画是否实际发生：moveend 优先，短延迟作为无位移时的兜底。
+      map.once('moveend', renderDayPhotoCallouts);
+      setTimeout(renderDayPhotoCallouts, 450);
+    }
     map.fitBounds(dayOverviewBounds, { padding: [38, 38], maxZoom: 12 });
-  }
+  } else renderDayPhotoCallouts();
   if (!Number.isInteger(state.selectedIndex)) {
     $('#routeDetail').innerHTML = `<b>${date ? `${escapeHtml(date)} 地图总览` : '全程地图总览'}</b><small>已显示 ${places.filter(place => resolved.has(place.id)).length + customPointEntries.filter(point => resolved.has(point.key)).length} 个关联地点与 ${displayedRouteCount} 条行程线路。点击时间表卡片可在此查看该事件的详细信息。</small>`;
   }
