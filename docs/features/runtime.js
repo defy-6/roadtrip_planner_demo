@@ -238,9 +238,8 @@ scheduleExportPreview.innerHTML = '<section><div class="aside-head"><h3>时间�
 document.body.append(scheduleExportPreview);
 let pendingScheduleExportCanvas;
 const locationActions = document.createElement('div'); locationActions.className = 'location-head-actions';
-const universalPlaceButton = document.createElement('button'); universalPlaceButton.type = 'button'; universalPlaceButton.id = 'universalPlaceBtn'; universalPlaceButton.className = 'ghost'; universalPlaceButton.textContent = '通用库';
 const addPlaceCategoryButton = document.createElement('button'); addPlaceCategoryButton.type = 'button'; addPlaceCategoryButton.id = 'addPlaceCategoryBtn'; addPlaceCategoryButton.className = 'ghost'; addPlaceCategoryButton.textContent = '+ 类别';
-const addPlaceButton = $('#addPlaceBtn'); addPlaceButton.before(locationActions); locationActions.append(universalPlaceButton, addPlaceCategoryButton, addPlaceButton, createExpandButton(locationsPanel, '地点库'));
+const addPlaceButton = $('#addPlaceBtn'); addPlaceButton.before(locationActions); locationActions.append(addPlaceCategoryButton, addPlaceButton, createExpandButton(locationsPanel, '地点库'));
 const universalPlaceDialog = document.createElement('dialog');
 universalPlaceDialog.className = 'event-editor';
 universalPlaceDialog.innerHTML = '<section class="editor-form"><h3>通用地点库</h3><p class="hint">点击地点即可复制到当前计划；会保留已缓存的位置、图片与 POI 详情，不调用高德。</p><input id="universalPlaceSearch" type="search" placeholder="搜索通用地点"><div id="universalPlaceList" class="places"></div><div class="editor-actions"><button type="button" id="closeUniversalPlaceDialog" class="ghost">关闭</button></div></section>';
@@ -1076,7 +1075,7 @@ function renderUniversalPlaces() {
     $('#fileSaveStatus').textContent = `已从通用地点库加入“${imported.name || '地点'}”（已复用本地缓存）`;
   });
 }
-universalPlaceButton.onclick = () => { renderUniversalPlaces(); universalPlaceDialog.showModal(); };
+$('#placeLibraryBtn').onclick = () => { renderUniversalPlaces(); universalPlaceDialog.showModal(); };
 $('#closeUniversalPlaceDialog').onclick = () => universalPlaceDialog.close();
 $('#universalPlaceSearch').oninput = renderUniversalPlaces;
 function refreshEventCards() { state.schedule.forEach((event, index) => updateNodeFromSchedule(index)); }
@@ -2659,7 +2658,6 @@ $('#placeEditorForm').onsubmit = async event => {
   if (submit) { submit.disabled = false; submit.textContent = '保存地点'; }
   pendingPlaceConfirmation?.(place); pendingPlaceConfirmation = null;
 };
-$('#placeLibraryBtn').onclick = () => { locationsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }); locationsPanel.classList.remove('jump-highlight'); requestAnimationFrame(() => locationsPanel.classList.add('jump-highlight')); };
 $('#placeSearch').oninput = event => { placeSearchText = event.target.value.trim(); renderLocations(); };
 $('#placeTypeFilter').onchange = event => { placeTypeFilter = event.target.value; renderLocations(); };
 $('#togglePlaceSelection').onclick = event => { placeSelectionMode = !placeSelectionMode; if (!placeSelectionMode) selectedPlaceIds.clear(); event.currentTarget.textContent = placeSelectionMode ? '完成选择' : '选择地点'; renderLocations(); };
