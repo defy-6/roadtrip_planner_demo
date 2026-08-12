@@ -42,11 +42,11 @@ const poiFullAddress = poi => {
   const name = String(poi.name || '').trim();
   return name && !base.includes(name) ? `${base}${base ? '·' : ''}${name}` : (base || name);
 };
-const amap = async (endpoint, params) => {
+const amap = async (endpoint, params, { withMeta = false } = {}) => {
   if (!key) throw new Error('未配置 AMAP_WEB_SERVICE_KEY。请复制 .env.example 为 .env 后填写。');
   const sortedParams = Object.fromEntries(Object.entries(params).sort(([a], [b]) => a.localeCompare(b)));
   const cacheKey = `${endpoint}?${new URLSearchParams(sortedParams)}`;
-  if (amapCache[cacheKey]) return amapCache[cacheKey];
+  if (amapCache[cacheKey]) return withMeta ? { data: amapCache[cacheKey], cached: true } : amapCache[cacheKey];
   const query = new URLSearchParams({ key, ...sortedParams });
   const res = await fetch(`https://restapi.amap.com${endpoint}?${query}`);
   if (!res.ok) throw new Error(`高德服务响应 ${res.status}`);
@@ -54,7 +54,7 @@ const amap = async (endpoint, params) => {
   if (data.status !== '1') throw new Error(data.info || '高德服务请求失败');
   amapCache[cacheKey] = data;
   await saveCache();
-  return data;
+  return withMeta ? { data, cached: false } : data;
 };
 
 app.get('/api/geocode', async (req, res) => {
@@ -108,7 +108,8 @@ app.get('/api/place-photos', async (req, res) => {
     if (!name || !address) throw new Error('请提供地点名称和完整地址');
     const province = ['新疆', '西藏', '内蒙古', '宁夏', '广西', '北京', '上海', '天津', '重庆', '河北', '山西', '辽宁', '吉林', '黑龙江', '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南', '广东', '海南', '四川', '贵州', '云南', '陕西', '甘肃', '青海', '台湾', '香港', '澳门'].find(alias => address.includes(alias)) || '';
     const city = [...address.matchAll(/([\u4e00-\u9fa5]{2,}?(?:自治区|自治州|地区|市|县|区))/g)].map(match => match[1]).at(-1) || province;
-    const data = await amap('/v5/place/text', { keywords: address, region: city, city_limit: city ? 'true' : 'false', page_size: '10', page_num: '1', show_fields: 'business,photos' });
+    const result = await amap('/v5/place/text', { keywords: address, region: city, city_limit: city ? 'true' : 'false', page_size: '10', page_num: '1', show_fields: 'business,photos' }, { withMeta: true });
+    const { data } = result;
     const poiPhotos = poi => Array.isArray(poi.photos) ? poi.photos : (poi.photos?.url ? [poi.photos] : []);
     const candidates = (data.pois || []).filter(poi => poiPhotos(poi).length).map(poi => {
       const text = `${poi.name || ''}${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}`;
@@ -116,7 +117,7 @@ app.get('/api/place-photos', async (req, res) => {
       return { poi, score: (poi.name === name ? 100 : poi.name?.includes(name) ? 45 : 0) + nameScore + (province && text.includes(province) ? 25 : 0) };
     }).sort((a, b) => b.score - a.score).slice(0, 3);
     const photos = candidates.flatMap(({ poi }) => poiPhotos(poi).slice(0, 4).map(photo => ({ url: photo.url, title: photo.title || poi.name || name, poiName: poi.name || name, address: poiFullAddress(poi) }))).filter(photo => photo.url);
-    res.json({ photos: photos.slice(0, 8) });
+    res.json({ photos: photos.slice(0, 8), cached: result.cached });
   } catch (error) { res.status(400).json({ error: error.message || '高德图片查询失败' }); }
 });
 
@@ -127,7 +128,8 @@ app.get('/api/place-details', async (req, res) => {
     if (!name || !address) throw new Error('请提供地点名称和完整地址');
     const province = ['新疆', '西藏', '内蒙古', '宁夏', '广西', '北京', '上海', '天津', '重庆', '河北', '山西', '辽宁', '吉林', '黑龙江', '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南', '广东', '海南', '四川', '贵州', '云南', '陕西', '甘肃', '青海', '台湾', '香港', '澳门'].find(alias => address.includes(alias)) || '';
     const city = [...address.matchAll(/([\u4e00-\u9fa5]{2,}?(?:自治区|自治州|地区|市|县|区))/g)].map(match => match[1]).at(-1) || province;
-    const data = await amap('/v5/place/text', { keywords: address, region: city, city_limit: city ? 'true' : 'false', page_size: '10', page_num: '1', show_fields: 'business,photos' });
+    const result = await amap('/v5/place/text', { keywords: address, region: city, city_limit: city ? 'true' : 'false', page_size: '10', page_num: '1', show_fields: 'business,photos' }, { withMeta: true });
+    const { data } = result;
     const pois = data.pois || [];
     const ranked = pois.map(poi => {
       const text = `${poi.name || ''}${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}`;
@@ -138,7 +140,7 @@ app.get('/api/place-details', async (req, res) => {
     if (!poi) throw new Error('高德未找到对应地点');
     const ext = poi.business || poi.biz_ext || {};
     const text = value => Array.isArray(value) ? value.filter(Boolean).join('、') : String(value || '');
-    res.json({ poi: { id: poi.id || '', name: poi.name || name, intro: text(poi.intro || poi.description), openTime: text(ext.opentime_week || ext.opentime_today || poi.opentime_week || poi.opentime || poi.opening_hours), rating: text(ext.rating || poi.rating), referenceCost: text(ext.cost || poi.cost), tags: text(ext.keytag || ext.rectag || poi.tag || poi.alias), ticketPrice: text(poi.price || ext.price), address: poiFullAddress(poi), location: poi.location || '' } });
+    res.json({ poi: { id: poi.id || '', name: poi.name || name, intro: text(poi.intro || poi.description), openTime: text(ext.opentime_week || ext.opentime_today || poi.opentime_week || poi.opentime || poi.opening_hours), rating: text(ext.rating || poi.rating), referenceCost: text(ext.cost || poi.cost), tags: text(ext.keytag || ext.rectag || poi.tag || poi.alias), ticketPrice: text(poi.price || ext.price), address: poiFullAddress(poi), location: poi.location || '' }, cached: result.cached });
   } catch (error) { res.status(400).json({ error: error.message || '高德 POI 详情查询失败' }); }
 });
 

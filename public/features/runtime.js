@@ -2428,7 +2428,8 @@ async function queryNewPlacePhotos() {
     const response = await fetch(`/api/place-photos?${new URLSearchParams({ name, address })}`);
     const data = await response.json(); if (!response.ok) throw new Error(data.error || '高德图片查询失败');
     pendingNewPlacePhotos = data.photos || []; pendingNewPlacePhotoIndex = -1; renderNewPlacePhotoCandidates();
-    $('#newPlaceAmapStatus').textContent = pendingNewPlacePhotos.length ? `找到 ${pendingNewPlacePhotos.length} 张高德候选图，请选择一张。` : '高德暂未返回可用图片。';
+    const source = data.cached ? '本地缓存' : '本次高德查询';
+    $('#newPlaceAmapStatus').textContent = pendingNewPlacePhotos.length ? `找到 ${pendingNewPlacePhotos.length} 张高德候选图（${source}），请选择一张。` : `高德暂未返回可用图片（${source}）。`;
   } catch (error) { pendingNewPlacePhotos = []; pendingNewPlacePhotoIndex = -1; renderNewPlacePhotoCandidates(); $('#newPlaceAmapStatus').textContent = error.message || '高德图片查询失败，请检查名称和地址。'; }
   finally { button.disabled = false; refreshPlaceQueryLabels({ hasPhoto: !$('#newPlaceCurrentPhoto').hidden, hasDetails: ['newPlaceIntro', 'newPlaceOpenTime', 'newPlaceRating', 'newPlaceReferenceCost', 'newPlaceTicketPrice', 'newPlaceTags'].some(id => Boolean($(`#${id}`).value.trim())) }); }
 }
@@ -2449,7 +2450,7 @@ $('#queryNewPlaceDetails').onclick = async event => {
       $('#newPlaceAddress').value = pendingNewPlaceResolved.address;
       renderNewPlaceResolved();
     }
-    $('#newPlaceAmapStatus').textContent = '已填入高德 Web 服务实际返回的 POI 详情；空字段表示该接口未提供。';
+    $('#newPlaceAmapStatus').textContent = `已填入高德 Web 服务实际返回的 POI 详情（${data.cached ? '本地缓存' : '本次高德查询'}）；空字段表示该接口未提供。`;
   } catch (error) { $('#newPlaceAmapStatus').textContent = error.message || '高德 POI 详情查询失败。'; }
   finally { button.disabled = false; refreshPlaceQueryLabels({ hasPhoto: !$('#newPlaceCurrentPhoto').hidden, hasDetails: ['newPlaceIntro', 'newPlaceOpenTime', 'newPlaceRating', 'newPlaceReferenceCost', 'newPlaceTicketPrice', 'newPlaceTags'].some(id => Boolean($(`#${id}`).value.trim())) }); }
 };
