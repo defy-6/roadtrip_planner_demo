@@ -2239,9 +2239,11 @@ $('#schedule').ondragstart = event => {
 };
 $('#schedule').ondragend = event => { activeScheduleDragIndexes = []; document.querySelectorAll('.calendar-block.dragging').forEach(item => item.classList.remove('dragging')); document.querySelectorAll('.calendar-day.drop-target,.calendar-drop-preview').forEach(day => day.classList.remove('drop-target') || day.remove()); };
 $('#schedule').ondragover = event => {
-  const day = event.target.closest('.calendar-day'); if (!day) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+  const day = event.target.closest('.calendar-day'); if (!day) return; event.preventDefault();
   const placeId = draggingPlaceId || (event.dataTransfer.types.includes('application/x-roadtrip-place') ? event.dataTransfer.getData('application/x-roadtrip-place') : '');
   if (placeId) {
+    // 地点卡片是复制到时间表；若这里仍声明 move，Safari 等浏览器会取消 drop。
+    event.dataTransfer.dropEffect = 'copy';
     const place = state.locations.find(item => item.id === placeId);
     const block = event.target.closest('.calendar-block');
     document.querySelectorAll('.calendar-day.drop-target').forEach(item => item.classList.toggle('drop-target', item === day));
@@ -2257,6 +2259,7 @@ $('#schedule').ondragover = event => {
     }
     return;
   }
+  event.dataTransfer.dropEffect = 'move';
   document.querySelectorAll('.calendar-day.drop-target').forEach(item => item.classList.toggle('drop-target', item === day));
   const indexes = activeScheduleDragIndexes;
   const first = state.schedule[indexes?.[0]]; if (!first) return;
