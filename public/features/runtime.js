@@ -1028,21 +1028,23 @@ function routeColorForDate(date) {
   const dates = [...new Set(state.schedule.map(item => item.date).filter(Boolean))].sort();
   return palette[Math.max(0, dates.indexOf(date)) % palette.length];
 }
-function routeColorForSegment(date, routeIndex = 0, allDates = false) {
+function tintRouteColor(color, amount) {
+  const value = color.replace('#', '');
+  const channels = [0, 2, 4].map(offset => Number.parseInt(value.slice(offset, offset + 2), 16));
+  const tinted = channels.map(channel => Math.round(channel + (255 - channel) * amount));
+  return `#${tinted.map(channel => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+function dayDriveEvents(date) {
+  return state.schedule
+    .map((event, scheduleIndex) => ({ event, scheduleIndex }))
+    .filter(({ event }) => event.type === 'drive' && event.date === date)
+    .sort((first, second) => `${first.event.start || '99:99'}:${first.scheduleIndex}`.localeCompare(`${second.event.start || '99:99'}:${second.scheduleIndex}`));
+}
+function routeColorForSegment(date, routeIndex = 0, allDates = false, count = 1) {
   if (allDates) return routeColorForDate(date);
-  const variants = [
-    ['#2563eb', '#0891b2', '#7c3aed', '#0369a1'],
-    ['#d97706', '#dc2626', '#b45309', '#c2410c'],
-    ['#059669', '#0f766e', '#65a30d', '#15803d'],
-    ['#7c3aed', '#2563eb', '#be123c', '#6d28d9'],
-    ['#dc2626', '#d97706', '#be123c', '#b91c1c'],
-    ['#0891b2', '#2563eb', '#0f766e', '#0e7490'],
-    ['#be123c', '#7c3aed', '#dc2626', '#9f1239'],
-    ['#65a30d', '#059669', '#d97706', '#4d7c0f'],
-    ['#374151', '#2563eb', '#7c3aed', '#475569']
-  ];
-  const dates = [...new Set(state.schedule.map(item => item.date).filter(Boolean))].sort();
-  return variants[Math.max(0, dates.indexOf(date)) % variants.length][routeIndex % variants[0].length];
+  const progress = count <= 1 ? 0 : routeIndex / (count - 1);
+  // 同一日期保持同一色相，时间越晚越浅；避免多段线路看起来彼此无关。
+  return tintRouteColor(routeColorForDate(date), .08 + progress * .48);
 }
 function overviewRouteWeight(allDates = false) {
   const zoom = map?.getZoom?.() || 7;
@@ -1067,8 +1069,8 @@ function refreshOverviewRouteWeights() {
     }
   });
 }
-function routeOverviewStyle(date, allDates = false, routeIndex = 0) {
-  if (!allDates) return { color: routeColorForSegment(date, routeIndex), weight: overviewRouteWeight(false), opacity: .9, smoothFactor: 0, lineCap: 'round', lineJoin: 'round' };
+function routeOverviewStyle(date, allDates = false, routeIndex = 0, routeCount = 1) {
+  if (!allDates) return { color: routeColorForSegment(date, routeIndex, false, routeCount), weight: overviewRouteWeight(false), opacity: .9, smoothFactor: 0, lineCap: 'round', lineJoin: 'round' };
   const dates = [...new Set(state.schedule.map(item => item.date).filter(Boolean))].sort();
   const index = Math.max(0, dates.indexOf(date));
   return { color: routeColorForDate(date), weight: overviewRouteWeight(true), opacity: .72, smoothFactor: 0, lineCap: 'round', lineJoin: 'round' };
@@ -1196,9 +1198,9 @@ function renderMapRouteLegend(date) {
     const place = state.locations.find(item => item.id === event.locationId);
     return [place?.type || event.type];
   }).filter(Boolean).map(mapDisplayType))];
-  const driveEvents = activeEvents.filter(event => event.type === 'drive');
+  const driveEvents = activeDate ? dayDriveEvents(activeDate).map(({ event }) => event) : activeEvents.filter(event => event.type === 'drive');
   const driveCount = driveEvents.length;
-  const routeLegend = driveEvents.map((event, index) => `<div><i class="route-legend-swatch" style="background:${routeColorForSegment(activeDate, index)}"></i>${escapeHtml(event.title || `路程 ${index + 1}`)}</div>`).join('');
+  const routeLegend = driveEvents.map((event, index) => `<div><i class="route-legend-swatch" style="background:${routeColorForSegment(activeDate, index, false, driveCount)}"></i>${escapeHtml(event.start ? `${event.start} · ` : '')}${escapeHtml(event.title || `路程 ${index + 1}`)}</div>`).join('');
   mapRouteLegend.innerHTML = `<b>${activeDate ? `${escapeHtml(activeDate)} 图例` : '地图图例'}</b>${routeLegend}${placeTypes.map(type => `<div><i style="background:${placeTypeColor(type)}"></i>${escapeHtml(mapDisplayTypeName(type))}</div>`).join('')}<small>路程颜色与地图对应；点位颜色按地点库类别显示。</small>`;
   mapRouteLegend.hidden = !(driveCount || placeTypes.length);
 }
@@ -1265,7 +1267,7 @@ async function showDayOverview(date) {
   events.filter(event => event.type === 'flight').forEach(event => {
     drawFlightItinerary(dayOverviewLayer, event, event.scheduleIndex);
   });
-  const routeEvents = events.filter(event => event.type === 'drive');
+  const routeEvents = events.filter(event => event.type === 'drive').sort((first, second) => `${first.start || '99:99'}:${first.scheduleIndex}`.localeCompare(`${second.start || '99:99'}:${second.scheduleIndex}`));
   let displayedRouteCount = events.filter(event => event.type === 'flight').length;
   let routeCacheChanged = false;
   const routeRenderRecords = [];
@@ -1327,7 +1329,7 @@ async function showDayOverview(date) {
   routeRenderRecords.forEach((record, recordIndex) => {
     const { latLngs, event, route, routeIndex } = record;
     const visualOffset = Math.max(-12, Math.min(12, offsets[recordIndex]));
-    const overviewStyle = routeOverviewStyle(event.date, !date, routeIndex);
+    const overviewStyle = routeOverviewStyle(event.date, !date, routeIndex, routeRenderRecords.length);
     // 所有高德原始点都保留；仅对较短的近距离路线整体平移以形成视觉分道。
     const displayLatLngs = translateRouteForDisplay(latLngs, visualOffset);
     const line = L.polyline(displayLatLngs, overviewStyle);
