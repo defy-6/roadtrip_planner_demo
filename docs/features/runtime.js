@@ -219,16 +219,22 @@ const addPlaceCategoryButton = document.createElement('button'); addPlaceCategor
 const addPlaceButton = $('#addPlaceBtn'); addPlaceButton.before(locationActions); locationActions.append(addPlaceCategoryButton, addPlaceButton, createExpandButton(locationsPanel, '地点库'));
 const placeEditor = document.createElement('dialog');
 placeEditor.id = 'placeEditor'; placeEditor.className = 'event-editor';
-placeEditor.innerHTML = '<form id="placeEditorForm" class="editor-form" method="dialog"><h3>新增地点</h3><label>地点类型<select id="newPlaceType"></select></label><label>地点名称<input id="newPlaceName" required placeholder="例如：赛里木湖东门"></label><label>详细地址<input id="newPlaceAddress" placeholder="地址未确定可留空"></label><label>地点图片（可选）<input id="newPlacePhoto" type="file" accept="image/*"></label><label>备注<textarea id="newPlaceNote" rows="3" placeholder="预约、营业时间等信息"></textarea></label><div class="editor-actions"><button type="button" id="placeEditorCancel" class="ghost">取消</button><button type="submit">保存地点</button></div></form>';
+placeEditor.innerHTML = '<form id="placeEditorForm" class="editor-form" method="dialog"><h3>新增地点</h3><label>地点类型<select id="newPlaceType"></select></label><label>地点名称<input id="newPlaceName" required placeholder="例如：赛里木湖东门"></label><label>详细地址<input id="newPlaceAddress" placeholder="地址未确定可留空"></label><div class="new-place-query"><button type="button" id="queryNewPlaceAmap">查询高德位置与图片</button><small id="newPlaceAmapStatus">填写名称和完整地址后查询；保存前可选一张候选图。</small></div><div id="newPlacePhotoCandidates" class="new-place-photo-candidates" hidden></div><label>地点图片（可选）<input id="newPlacePhoto" type="file" accept="image/*"></label><label>备注<textarea id="newPlaceNote" rows="3" placeholder="预约、营业时间等信息"></textarea></label><div class="editor-actions"><button type="button" id="placeEditorCancel" class="ghost">取消</button><button type="submit">保存地点</button></div></form>';
 document.body.append(placeEditor);
 const placeCategoryEditor = document.createElement('dialog');
 placeCategoryEditor.id = 'placeCategoryEditor'; placeCategoryEditor.className = 'event-editor';
 placeCategoryEditor.innerHTML = '<form id="placeCategoryEditorForm" class="editor-form" method="dialog"><h3>新增地点类别</h3><p class="hint">仅当前计划可用；地点库中的地点仍可跨计划复用。</p><label>类别名称<input id="newPlaceCategoryName" required maxlength="16" placeholder="例如：露营地"></label><label>图例颜色<input id="newPlaceCategoryColor" type="color" value="#2f73a9"></label><div class="editor-actions"><button type="button" id="placeCategoryEditorCancel" class="ghost">取消</button><button type="submit">保存类别</button></div></form>';
 document.body.append(placeCategoryEditor);
 let pendingPlaceConfirmation;
+let pendingNewPlaceResolved = null;
+let pendingNewPlacePhotos = [];
+let pendingNewPlacePhotoIndex = -1;
 function fileToDataUrl(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); }); }
 function confirmNewPlace(initial = {}) {
   $('#placeEditorForm').reset();
+  pendingNewPlaceResolved = null; pendingNewPlacePhotos = []; pendingNewPlacePhotoIndex = -1;
+  $('#newPlacePhotoCandidates').hidden = true; $('#newPlacePhotoCandidates').replaceChildren();
+  $('#newPlaceAmapStatus').textContent = '填写名称和完整地址后查询；保存前可选一张候选图。';
   $('#newPlaceType').innerHTML = placeTypeOptionsHtml();
   $('#newPlaceType').value = initial.type || placeTypeFilter || 'spot';
   $('#newPlaceName').value = initial.name || '';
@@ -237,6 +243,7 @@ function confirmNewPlace(initial = {}) {
   placeEditor.querySelector('h3').textContent = initial.fromEvent ? '确认新增并关联地点' : '新增地点';
   placeEditor.showModal();
   requestAnimationFrame(() => $('#newPlaceName').focus());
+  if (initial.name && initial.address) requestAnimationFrame(() => queryNewPlaceAmap());
   return new Promise(resolve => { pendingPlaceConfirmation = resolve; });
 }
 document.head.append(Object.assign(document.createElement('style'), { textContent: '@media(min-width:981px){main{max-width:1500px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px;align-items:start}main>header,main>.hero{grid-column:1/-1}.schedule-panel,.content{height:calc(100vh - 190px);min-height:680px;position:relative;align-self:start}.schedule-panel{grid-column:1;grid-row:3;margin:0;display:flex;flex-direction:column}.schedule-panel .schedule{flex:1;min-height:0}.schedule-scroll{max-height:none;height:100%}.content{grid-column:2;grid-row:3;display:block}.content>.map-panel{height:100%;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto auto auto}.content>.map-panel .map{height:auto;min-height:0}.content>.map-panel .route-btn{position:static;top:auto;left:auto;transform:none;justify-self:center;margin-top:-18px;z-index:500}.content>aside{display:none}.locations-panel{grid-column:1/-1;grid-row:4;margin-top:18px!important;padding:20px!important;border:1px solid #e4e1d8!important;border-radius:14px;background:#fffdf8}.locations-panel .places{grid-template-columns:repeat(3,minmax(0,1fr))}main>.schedule-panel+.content{margin-top:0}}@media(max-width:980px){.locations-panel{margin-top:18px;padding:16px;border:1px solid #e4e1d8;border-radius:14px;background:#fffdf8}}' }));
@@ -2288,21 +2295,53 @@ function cancelPlaceConfirmation() {
   placeEditor.close();
   pendingPlaceConfirmation?.(null); pendingPlaceConfirmation = null;
 }
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.new-place-query{display:flex;flex-wrap:wrap;align-items:center;gap:7px}.new-place-query button{padding:6px 8px;border:1px solid #9dbaaa;border-radius:6px;background:#f7fbf8;color:#1d5b46;font:inherit;cursor:pointer}.new-place-query small{flex:1 1 180px;color:#607569;font-size:11px;line-height:1.35}.new-place-photo-candidates{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:7px;border:1px solid #d9e5dc;border-radius:8px;background:#f7fbf8}.new-place-photo-candidates button{padding:0!important;overflow:hidden;border:2px solid transparent!important;border-radius:5px;background:#fff!important}.new-place-photo-candidates button.selected{border-color:#1d5b46!important;box-shadow:0 0 0 2px #1d5b4630}.new-place-photo-candidates img{display:block;width:100%;height:64px;object-fit:cover}' }));
 $('#placeEditorCancel').onclick = cancelPlaceConfirmation;
 placeEditor.oncancel = event => { event.preventDefault(); cancelPlaceConfirmation(); };
+function renderNewPlacePhotoCandidates() {
+  const container = $('#newPlacePhotoCandidates');
+  container.replaceChildren();
+  pendingNewPlacePhotos.forEach((photo, index) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = index === pendingNewPlacePhotoIndex ? 'selected' : ''; button.title = `采用高德图片：${photo.title || ''}`;
+    const image = document.createElement('img'); image.src = photo.url; image.alt = photo.title || '高德 POI 图片'; button.append(image);
+    button.onclick = () => { pendingNewPlacePhotoIndex = index; renderNewPlacePhotoCandidates(); $('#newPlaceAmapStatus').textContent = `已选第 ${index + 1} 张高德候选图，保存地点后生效。`; };
+    container.append(button);
+  });
+  container.hidden = !pendingNewPlacePhotos.length;
+}
+async function queryNewPlaceAmap() {
+  const name = $('#newPlaceName').value.trim(), address = $('#newPlaceAddress').value.trim();
+  if (!name || !address) { alert('请先填写地点名称和完整地址。'); return; }
+  const button = $('#queryNewPlaceAmap'); button.disabled = true; button.textContent = '查询中…';
+  $('#newPlaceAmapStatus').textContent = '正在查询高德位置与图片…';
+  try {
+    const [point, photoResponse] = await Promise.all([
+      geocode(address, name),
+      fetch(`/api/place-photos?${new URLSearchParams({ name, address })}`)
+    ]);
+    const photoData = await photoResponse.json(); if (!photoResponse.ok) throw new Error(photoData.error || '高德图片查询失败');
+    pendingNewPlaceResolved = { name: point.name || name, address: point.formatted_address || address, location: point.location };
+    pendingNewPlacePhotos = photoData.photos || []; pendingNewPlacePhotoIndex = -1; renderNewPlacePhotoCandidates();
+    $('#newPlaceAmapStatus').textContent = `已定位${pendingNewPlaceResolved.name}${pendingNewPlacePhotos.length ? `，找到 ${pendingNewPlacePhotos.length} 张候选图，请选择一张。` : '；暂未找到可用图片。'}`;
+  } catch (error) { pendingNewPlaceResolved = null; pendingNewPlacePhotos = []; pendingNewPlacePhotoIndex = -1; renderNewPlacePhotoCandidates(); $('#newPlaceAmapStatus').textContent = error.message || '高德查询失败，请检查名称和地址。'; }
+  finally { button.disabled = false; button.textContent = '查询高德位置与图片'; }
+}
+$('#queryNewPlaceAmap').onclick = queryNewPlaceAmap;
 $('#placeEditorForm').onsubmit = async event => {
   event.preventDefault();
   const name = $('#newPlaceName').value.trim();
   if (!name) { $('#newPlaceName').focus(); return; }
   const photoFile = $('#newPlacePhoto').files[0];
-  const draft = { type: $('#newPlaceType').value, name, address: $('#newPlaceAddress').value.trim(), note: $('#newPlaceNote').value.trim(), ...(photoFile ? { photo: await fileToDataUrl(photoFile) } : {}) };
+  const address = $('#newPlaceAddress').value.trim();
+  const selectedAmapPhoto = pendingNewPlacePhotos[pendingNewPlacePhotoIndex];
+  const draft = { type: $('#newPlaceType').value, name, address, note: $('#newPlaceNote').value.trim(), ...(photoFile ? { photo: await fileToDataUrl(photoFile) } : selectedAmapPhoto ? { photo: selectedAmapPhoto.url, photoSource: `高德 POI · ${selectedAmapPhoto.poiName || name}` } : {}) };
   const submit = event.submitter; if (submit) { submit.disabled = true; submit.textContent = draft.address ? '保存并查询高德…' : '正在保存…'; }
   let place = findMatchingLocation(state.locations, draft.address, draft.name);
   if (!place) place = { id: crypto.randomUUID(), ...draft };
   else Object.assign(place, draft);
   if (draft.address) {
     try {
-      const point = await geocode(draft.address, draft.name);
+      const point = pendingNewPlaceResolved && pendingNewPlaceResolved.address === draft.address ? pendingNewPlaceResolved : await geocode(draft.address, draft.name);
       const samePointPlace = findMatchingLocation(state.locations, draft.address, draft.name, point.location);
       if (samePointPlace && samePointPlace.id !== place.id) { Object.assign(samePointPlace, draft); place = samePointPlace; }
       place.resolved = { name: point.name || draft.name, address: point.formatted_address || draft.address, location: point.location };
