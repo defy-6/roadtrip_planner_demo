@@ -219,7 +219,7 @@ const addPlaceCategoryButton = document.createElement('button'); addPlaceCategor
 const addPlaceButton = $('#addPlaceBtn'); addPlaceButton.before(locationActions); locationActions.append(addPlaceCategoryButton, addPlaceButton, createExpandButton(locationsPanel, '地点库'));
 const placeEditor = document.createElement('dialog');
 placeEditor.id = 'placeEditor'; placeEditor.className = 'event-editor';
-placeEditor.innerHTML = '<form id="placeEditorForm" class="editor-form" method="dialog"><h3>新增地点</h3><label>地点类型<select id="newPlaceType"></select></label><label>地点名称<input id="newPlaceName" required placeholder="例如：赛里木湖东门"></label><label>详细地址<input id="newPlaceAddress" placeholder="地址未确定可留空"></label><div class="new-place-query"><button type="button" id="queryNewPlaceLocation">查询高德位置</button><button type="button" id="queryNewPlacePhotos">查询高德图片</button><small id="newPlaceAmapStatus">填写名称和完整地址后可分别查询；保存前可选一张候选图。</small></div><div id="newPlacePhotoCandidates" class="new-place-photo-candidates" hidden></div><label>地点图片（可选）<input id="newPlacePhoto" type="file" accept="image/*"></label><label>备注<textarea id="newPlaceNote" rows="3" placeholder="预约、营业时间等信息"></textarea></label><div class="editor-actions"><button type="button" id="placeEditorDelete" class="danger" hidden>删除地点</button><button type="button" id="placeEditorCancel" class="ghost">取消</button><button type="submit">保存地点</button></div></form>';
+placeEditor.innerHTML = '<form id="placeEditorForm" class="editor-form" method="dialog"><h3>新增地点</h3><label>地点类型<select id="newPlaceType"></select></label><label>地点名称<input id="newPlaceName" required placeholder="例如：赛里木湖东门"></label><label>详细地址<input id="newPlaceAddress" placeholder="地址未确定可留空"></label><div class="new-place-query"><button type="button" id="queryNewPlaceLocation">查询高德位置</button><button type="button" id="queryNewPlacePhotos">查询高德图片</button><button type="button" id="queryNewPlaceDetails">获取 POI 详情</button><small id="newPlaceAmapStatus">填写名称和完整地址后可分别查询；保存前可选一张候选图。</small></div><div id="newPlacePhotoCandidates" class="new-place-photo-candidates" hidden></div><label>地点图片（可选）<input id="newPlacePhoto" type="file" accept="image/*"></label><fieldset class="place-detail-fields"><legend>POI 详情（可人工修改）</legend><label>简介<textarea id="newPlaceIntro" rows="2" placeholder="高德未提供可留空"></textarea></label><div class="editor-grid"><label>营业时间<input id="newPlaceOpenTime" placeholder="高德未提供可留空"></label><label>评分<input id="newPlaceRating" placeholder="例如：4.6"></label><label>参考费用<input id="newPlaceReferenceCost" placeholder="例如：¥120/人"></label><label>门票<input id="newPlaceTicketPrice" placeholder="高德未提供可留空"></label></div><label>标签<input id="newPlaceTags" placeholder="例如：湖泊、观景、亲子"></label><label>人工备注<textarea id="newPlaceNote" rows="3" placeholder="预约、实际门票、营业时间调整等"></textarea></label></fieldset><div class="editor-actions"><button type="button" id="placeEditorDelete" class="danger" hidden>删除地点</button><button type="button" id="placeEditorCancel" class="ghost">取消</button><button type="submit">保存地点</button></div></form>';
 document.body.append(placeEditor);
 const placeCategoryEditor = document.createElement('dialog');
 placeCategoryEditor.id = 'placeCategoryEditor'; placeCategoryEditor.className = 'event-editor';
@@ -244,6 +244,7 @@ function confirmNewPlace(initial = {}) {
   $('#newPlaceName').value = initial.name || '';
   $('#newPlaceAddress').value = initial.address || '';
   $('#newPlaceNote').value = initial.note || '';
+  $('#newPlaceIntro').value = ''; $('#newPlaceOpenTime').value = ''; $('#newPlaceRating').value = ''; $('#newPlaceReferenceCost').value = ''; $('#newPlaceTicketPrice').value = ''; $('#newPlaceTags').value = '';
   placeEditor.querySelector('h3').textContent = initial.fromEvent ? '确认新增并关联地点' : '新增地点';
   placeEditor.showModal();
   requestAnimationFrame(() => $('#newPlaceName').focus());
@@ -257,6 +258,7 @@ function openPlaceEditor(placeId) {
   $('#newPlacePhotoCandidates').hidden = true; $('#newPlacePhotoCandidates').replaceChildren();
   $('#newPlaceType').innerHTML = placeTypeOptionsHtml(); $('#newPlaceType').value = place.type || 'spot';
   $('#newPlaceName').value = place.name || ''; $('#newPlaceAddress').value = place.address || ''; $('#newPlaceNote').value = place.note || '';
+  $('#newPlaceIntro').value = place.poiDetails?.intro || ''; $('#newPlaceOpenTime').value = place.poiDetails?.openTime || ''; $('#newPlaceRating').value = place.poiDetails?.rating || ''; $('#newPlaceReferenceCost').value = place.poiDetails?.referenceCost || ''; $('#newPlaceTicketPrice').value = place.poiDetails?.ticketPrice || ''; $('#newPlaceTags').value = place.poiDetails?.tags || '';
   $('#newPlaceAmapStatus').textContent = place.resolved ? `已定位：${place.resolved.name || place.name}。可重新查询位置或图片。` : '填写名称和完整地址后可分别查询；保存前可选一张候选图。';
   placeEditor.querySelector('h3').textContent = '编辑地点';
   $('#placeEditorDelete').hidden = false;
@@ -798,7 +800,7 @@ function renderLocations() {
   if (!places) return;
   const query = placeSearchText.toLowerCase();
   renderPlaceTypeFilter();
-  const typeOrder = ['spot', 'geography', 'food', 'hotel', 'flight', 'transport', 'service', 'fuel', 'supply', ...customPlaceCategories().map(category => category.id), 'drive'];
+  const typeOrder = ['spot', 'geography', 'food', 'hotel', 'shopping', 'flight', 'transport', 'service', 'fuel', 'supply', ...customPlaceCategories().map(category => category.id), 'drive'];
   const visibleLocations = state.locations.filter(place => (!placeTypeFilter || place.type === placeTypeFilter) && (!query || `${place.name || ''} ${place.address || ''} ${place.note || ''} ${placeTypeName(place.type)}`.toLowerCase().includes(query))).sort((a, b) => (typeOrder.indexOf(a.type) < 0 ? 99 : typeOrder.indexOf(a.type)) - (typeOrder.indexOf(b.type) < 0 ? 99 : typeOrder.indexOf(b.type)) || String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN'));
   $('#placeCount').textContent = `(${visibleLocations.length}/${state.locations.length})`;
   places.innerHTML = visibleLocations.length ? visibleLocations.map(place => `<article class="place-card place-card-summary${placeSelectionMode ? ' selection-mode' : ''}" data-place-id="${place.id}" tabindex="0" role="button" aria-label="编辑地点：${escapeHtml(place.name || '未命名地点')}"><div class="place-card-summary-title">${placeSelectionMode ? `<input type="checkbox" class="place-select" aria-label="选择 ${escapeHtml(place.name || '未命名地点')}" ${selectedPlaceIds.has(place.id) ? 'checked' : ''}>` : ''}<span class="place-type type-${escapeHtml(place.type || 'spot')}" style="background:${placeTypeColor(place.type)}22;color:${placeTypeColor(place.type)}">${escapeHtml(placeTypeName(place.type))}</span><b>${escapeHtml(place.name || '未命名地点')}</b></div>${place.photo ? `<img class="place-photo-preview" src="${escapeHtml(place.photo)}" alt="${escapeHtml(place.name || '地点')}图片">` : '<div class="place-photo-placeholder">暂无图片</div>'}</article>`).join('') : '<p class="hint">没有符合条件的地点。</p>';
@@ -2314,6 +2316,7 @@ function cancelPlaceConfirmation() {
   pendingPlaceConfirmation?.(null); pendingPlaceConfirmation = null;
 }
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.new-place-query{display:flex;flex-wrap:wrap;align-items:center;gap:7px}.new-place-query button{padding:6px 8px;border:1px solid #9dbaaa;border-radius:6px;background:#f7fbf8;color:#1d5b46;font:inherit;cursor:pointer}.new-place-query small{flex:1 1 180px;color:#607569;font-size:11px;line-height:1.35}.new-place-photo-candidates{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:7px;border:1px solid #d9e5dc;border-radius:8px;background:#f7fbf8}.new-place-photo-candidates button{padding:0!important;overflow:hidden;border:2px solid transparent!important;border-radius:5px;background:#fff!important}.new-place-photo-candidates button.selected{border-color:#1d5b46!important;box-shadow:0 0 0 2px #1d5b4630}.new-place-photo-candidates img{display:block;width:100%;height:64px;object-fit:cover}' }));
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.place-detail-fields{display:grid;gap:8px;margin:0;padding:10px;border:1px solid #d9e5dc;border-radius:8px}.place-detail-fields legend{padding:0 5px;color:#315540;font-weight:700;font-size:12px}.place-detail-fields .editor-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.place-detail-fields input,.place-detail-fields textarea{width:100%;box-sizing:border-box}@media(max-width:560px){.place-detail-fields .editor-grid{grid-template-columns:1fr}}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.place-card-summary{display:grid!important;gap:7px!important;min-height:0!important;padding:9px!important;cursor:pointer}.place-card-summary:hover{border-color:#7ca890;box-shadow:0 3px 10px #173c3214}.place-card-summary-title{display:flex;align-items:center;gap:6px;min-width:0}.place-card-summary-title b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.place-card-summary .place-photo-preview{height:104px!important;margin:0}.place-card-summary .place-photo-placeholder{height:72px}.place-card-summary.selection-mode{background:#f7fbf8}.place-card-summary .place-select{flex:0 0 auto}@media(min-width:981px){.locations-panel>.places{grid-template-columns:repeat(2,minmax(0,1fr))!important}.panel-expanded .locations-panel>.places{grid-template-columns:repeat(4,minmax(0,1fr))!important}}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.place-card-summary .place-photo-preview,.place-card-summary .place-photo-placeholder{width:100%!important;height:auto!important;aspect-ratio:16 / 9;box-sizing:border-box}.place-card-summary .place-photo-preview{object-fit:cover}.place-card-summary .place-photo-placeholder{min-height:0}@media(min-width:981px){.locations-panel>.places{grid-template-columns:repeat(2,minmax(0,1fr))!important}.panel-expanded .locations-panel>.places{grid-template-columns:repeat(4,minmax(0,1fr))!important}}@media(max-width:560px){.locations-panel>.places{grid-template-columns:1fr!important}}' }));
 $('#placeEditorCancel').onclick = cancelPlaceConfirmation;
@@ -2361,6 +2364,21 @@ async function queryNewPlacePhotos() {
 }
 $('#queryNewPlaceLocation').onclick = queryNewPlaceLocation;
 $('#queryNewPlacePhotos').onclick = queryNewPlacePhotos;
+$('#queryNewPlaceDetails').onclick = async event => {
+  const name = $('#newPlaceName').value.trim(), address = $('#newPlaceAddress').value.trim();
+  if (!name || !address) { alert('请先填写地点名称和完整地址。'); return; }
+  const button = event.currentTarget; button.disabled = true; button.textContent = '查询中…';
+  $('#newPlaceAmapStatus').textContent = '正在获取高德 POI 详情…';
+  try {
+    const response = await fetch(`/api/place-details?${new URLSearchParams({ name, address })}`);
+    const data = await response.json(); if (!response.ok) throw new Error(data.error || '高德 POI 详情查询失败');
+    const detail = data.poi || {};
+    $('#newPlaceIntro').value = detail.intro || ''; $('#newPlaceOpenTime').value = detail.openTime || ''; $('#newPlaceRating').value = detail.rating || ''; $('#newPlaceReferenceCost').value = detail.referenceCost || ''; $('#newPlaceTicketPrice').value = detail.ticketPrice || ''; $('#newPlaceTags').value = detail.tags || '';
+    if (detail.location) pendingNewPlaceResolved = { name: detail.name || name, address: detail.address || address, location: detail.location };
+    $('#newPlaceAmapStatus').textContent = '已填入高德实际返回的 POI 详情；空字段表示高德未提供。';
+  } catch (error) { $('#newPlaceAmapStatus').textContent = error.message || '高德 POI 详情查询失败。'; }
+  finally { button.disabled = false; button.textContent = '获取 POI 详情'; }
+};
 $('#placeEditorForm').onsubmit = async event => {
   event.preventDefault();
   const name = $('#newPlaceName').value.trim();
@@ -2368,7 +2386,8 @@ $('#placeEditorForm').onsubmit = async event => {
   const photoFile = $('#newPlacePhoto').files[0];
   const address = $('#newPlaceAddress').value.trim();
   const selectedAmapPhoto = pendingNewPlacePhotos[pendingNewPlacePhotoIndex];
-  const draft = { type: $('#newPlaceType').value, name, address, note: $('#newPlaceNote').value.trim(), ...(photoFile ? { photo: await fileToDataUrl(photoFile) } : selectedAmapPhoto ? { photo: selectedAmapPhoto.url, photoSource: `高德 POI · ${selectedAmapPhoto.poiName || name}` } : {}) };
+  const poiDetails = { intro: $('#newPlaceIntro').value.trim(), openTime: $('#newPlaceOpenTime').value.trim(), rating: $('#newPlaceRating').value.trim(), referenceCost: $('#newPlaceReferenceCost').value.trim(), ticketPrice: $('#newPlaceTicketPrice').value.trim(), tags: $('#newPlaceTags').value.trim() };
+  const draft = { type: $('#newPlaceType').value, name, address, note: $('#newPlaceNote').value.trim(), poiDetails, ...(photoFile ? { photo: await fileToDataUrl(photoFile) } : selectedAmapPhoto ? { photo: selectedAmapPhoto.url, photoSource: `高德 POI · ${selectedAmapPhoto.poiName || name}` } : {}) };
   const submit = event.submitter; if (submit) { submit.disabled = true; submit.textContent = draft.address ? '保存并查询高德…' : '正在保存…'; }
   let place = editingPlaceId ? state.locations.find(item => item.id === editingPlaceId) : findMatchingLocation(state.locations, draft.address, draft.name);
   if (!place) place = { id: crypto.randomUUID(), ...draft };
@@ -2436,7 +2455,7 @@ $('#fetchSelectedPhotos').onclick = async event => {
   $('#distance').textContent = `高德已为 ${found}/${selected.length} 个地点找到候选图片，请在地点卡片中确认采用。`;
 };
 $('#batchAddPlaces').onclick = () => {
-  const typeMap = { '景点': 'spot', '地名': 'geography', '地点': 'geography', '城市': 'geography', '饮食': 'food', '餐饮': 'food', '住宿': 'hotel', '酒店': 'hotel', '机场': 'flight', '服务区': 'service', '加油站': 'fuel', '补给': 'supply', '交通': 'transport' };
+  const typeMap = { '景点': 'spot', '地名': 'geography', '地点': 'geography', '城市': 'geography', '饮食': 'food', '餐饮': 'food', '住宿': 'hotel', '酒店': 'hotel', '购物': 'shopping', '商场': 'shopping', '机场': 'flight', '服务区': 'service', '加油站': 'fuel', '补给': 'supply', '交通': 'transport' };
   const lines = $('#batchPlaceInput').value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   if (!lines.length) { alert('请先粘贴要新增的地点。'); return; }
   const parsed = lines.map((line, index) => {
