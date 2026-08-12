@@ -103,7 +103,7 @@ app.get('/api/place-photos', async (req, res) => {
     if (!name || !address) throw new Error('请提供地点名称和完整地址');
     const province = ['新疆', '西藏', '内蒙古', '宁夏', '广西', '北京', '上海', '天津', '重庆', '河北', '山西', '辽宁', '吉林', '黑龙江', '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南', '广东', '海南', '四川', '贵州', '云南', '陕西', '甘肃', '青海', '台湾', '香港', '澳门'].find(alias => address.includes(alias)) || '';
     const city = [...address.matchAll(/([\u4e00-\u9fa5]{2,}?(?:自治区|自治州|地区|市|县|区))/g)].map(match => match[1]).at(-1) || province;
-    const data = await amap('/v3/place/text', { keywords: address, city, citylimit: city ? 'true' : 'false', offset: '10', page: '1', extensions: 'all' });
+    const data = await amap('/v5/place/text', { keywords: address, region: city, city_limit: city ? 'true' : 'false', page_size: '10', page_num: '1', show_fields: 'business,photos' });
     const poiPhotos = poi => Array.isArray(poi.photos) ? poi.photos : (poi.photos?.url ? [poi.photos] : []);
     const candidates = (data.pois || []).filter(poi => poiPhotos(poi).length).map(poi => {
       const text = `${poi.name || ''}${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}`;
@@ -122,7 +122,7 @@ app.get('/api/place-details', async (req, res) => {
     if (!name || !address) throw new Error('请提供地点名称和完整地址');
     const province = ['新疆', '西藏', '内蒙古', '宁夏', '广西', '北京', '上海', '天津', '重庆', '河北', '山西', '辽宁', '吉林', '黑龙江', '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南', '广东', '海南', '四川', '贵州', '云南', '陕西', '甘肃', '青海', '台湾', '香港', '澳门'].find(alias => address.includes(alias)) || '';
     const city = [...address.matchAll(/([\u4e00-\u9fa5]{2,}?(?:自治区|自治州|地区|市|县|区))/g)].map(match => match[1]).at(-1) || province;
-    const data = await amap('/v3/place/text', { keywords: address, city, citylimit: city ? 'true' : 'false', offset: '10', page: '1', extensions: 'all' });
+    const data = await amap('/v5/place/text', { keywords: address, region: city, city_limit: city ? 'true' : 'false', page_size: '10', page_num: '1', show_fields: 'business,photos' });
     const pois = data.pois || [];
     const ranked = pois.map(poi => {
       const text = `${poi.name || ''}${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}`;
@@ -131,9 +131,9 @@ app.get('/api/place-details', async (req, res) => {
     }).sort((a, b) => b.score - a.score);
     const poi = ranked[0]?.poi;
     if (!poi) throw new Error('高德未找到对应地点');
-    const ext = poi.biz_ext || {};
+    const ext = poi.business || poi.biz_ext || {};
     const text = value => Array.isArray(value) ? value.filter(Boolean).join('、') : String(value || '');
-    res.json({ poi: { id: poi.id || '', name: poi.name || name, intro: text(poi.intro || poi.description), openTime: text(poi.opentime_week || poi.opentime || poi.opening_hours), rating: text(ext.rating || poi.rating), referenceCost: text(ext.cost || poi.cost), tags: text(poi.tag || poi.alias), ticketPrice: text(poi.price || ext.price), address: `${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}`, location: poi.location || '' } });
+    res.json({ poi: { id: poi.id || '', name: poi.name || name, intro: text(poi.intro || poi.description), openTime: text(ext.opentime_week || ext.opentime_today || poi.opentime_week || poi.opentime || poi.opening_hours), rating: text(ext.rating || poi.rating), referenceCost: text(ext.cost || poi.cost), tags: text(ext.keytag || ext.rectag || poi.tag || poi.alias), ticketPrice: text(poi.price || ext.price), address: `${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}`, location: poi.location || '' } });
   } catch (error) { res.status(400).json({ error: error.message || '高德 POI 详情查询失败' }); }
 });
 

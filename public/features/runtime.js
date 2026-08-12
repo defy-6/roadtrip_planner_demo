@@ -219,7 +219,7 @@ const addPlaceCategoryButton = document.createElement('button'); addPlaceCategor
 const addPlaceButton = $('#addPlaceBtn'); addPlaceButton.before(locationActions); locationActions.append(addPlaceCategoryButton, addPlaceButton, createExpandButton(locationsPanel, '地点库'));
 const placeEditor = document.createElement('dialog');
 placeEditor.id = 'placeEditor'; placeEditor.className = 'event-editor';
-placeEditor.innerHTML = '<form id="placeEditorForm" class="editor-form" method="dialog"><h3>新增地点</h3><label>地点类型<select id="newPlaceType"></select></label><label>地点名称<input id="newPlaceName" required placeholder="例如：赛里木湖东门"></label><label>详细地址<input id="newPlaceAddress" placeholder="地址未确定可留空"></label><div class="new-place-query"><button type="button" id="queryNewPlaceLocation">查询高德位置</button><button type="button" id="queryNewPlacePhotos">查询高德图片</button><button type="button" id="queryNewPlaceDetails">获取 POI 详情</button><small id="newPlaceAmapStatus">填写名称和完整地址后可分别查询；保存前可选一张候选图。</small></div><div id="newPlacePhotoCandidates" class="new-place-photo-candidates" hidden></div><label>地点图片（可选）<input id="newPlacePhoto" type="file" accept="image/*"></label><fieldset class="place-detail-fields"><legend>POI 详情（可人工修改）</legend><label>简介<textarea id="newPlaceIntro" rows="2" placeholder="高德未提供可留空"></textarea></label><div class="editor-grid"><label>营业时间<input id="newPlaceOpenTime" placeholder="高德未提供可留空"></label><label>评分<input id="newPlaceRating" placeholder="例如：4.6"></label><label>参考费用<input id="newPlaceReferenceCost" placeholder="例如：¥120/人"></label><label>门票<input id="newPlaceTicketPrice" placeholder="高德未提供可留空"></label></div><label>标签<input id="newPlaceTags" placeholder="例如：湖泊、观景、亲子"></label><label>人工备注<textarea id="newPlaceNote" rows="3" placeholder="预约、实际门票、营业时间调整等"></textarea></label></fieldset><div class="editor-actions"><button type="button" id="placeEditorDelete" class="danger" hidden>删除地点</button><button type="button" id="placeEditorCancel" class="ghost">取消</button><button type="submit">保存地点</button></div></form>';
+placeEditor.innerHTML = '<form id="placeEditorForm" class="editor-form" method="dialog"><h3>新增地点</h3><label>地点类型<select id="newPlaceType"></select></label><label>地点名称<input id="newPlaceName" required placeholder="例如：赛里木湖东门"></label><label>详细地址<input id="newPlaceAddress" placeholder="地址未确定可留空"></label><div class="new-place-query"><button type="button" id="queryNewPlaceLocation">查询高德位置</button><button type="button" id="queryNewPlacePhotos">查询高德图片</button><button type="button" id="queryNewPlaceDetails">获取 POI 详情</button><small id="newPlaceAmapStatus">填写名称和完整地址后可分别查询；保存不会自动调用高德。</small></div><p id="newPlaceResolvedCoords" class="resolved-place" hidden></p><div id="newPlaceCurrentPhoto" class="place-editor-current-photo" hidden><img id="newPlaceCurrentPhotoImage" alt="当前地点图片"><small>当前地点图片；查询高德图片后可选择替换。</small></div><div id="newPlacePhotoCandidates" class="new-place-photo-candidates" hidden></div><label>地点图片（可选）<input id="newPlacePhoto" type="file" accept="image/*"></label><fieldset class="place-detail-fields"><legend>POI 详情（可人工修改）</legend><label>简介<textarea id="newPlaceIntro" rows="2" placeholder="高德未提供可留空"></textarea></label><div class="editor-grid"><label>营业时间<input id="newPlaceOpenTime" placeholder="高德未提供可留空"></label><label>评分<input id="newPlaceRating" placeholder="例如：4.6"></label><label>参考费用<input id="newPlaceReferenceCost" placeholder="例如：¥120/人"></label><label>门票<input id="newPlaceTicketPrice" placeholder="高德未提供可留空"></label></div><label>标签<input id="newPlaceTags" placeholder="例如：湖泊、观景、亲子"></label><label>人工备注<textarea id="newPlaceNote" rows="3" placeholder="预约、实际门票、营业时间调整等"></textarea></label></fieldset><div class="editor-actions"><button type="button" id="placeEditorDelete" class="danger" hidden>删除地点</button><button type="button" id="placeEditorCancel" class="ghost">取消</button><button type="submit">保存地点</button></div></form>';
 document.body.append(placeEditor);
 const placeCategoryEditor = document.createElement('dialog');
 placeCategoryEditor.id = 'placeCategoryEditor'; placeCategoryEditor.className = 'event-editor';
@@ -231,6 +231,19 @@ let placeSelectionMode = false;
 let pendingNewPlaceResolved = null;
 let pendingNewPlacePhotos = [];
 let pendingNewPlacePhotoIndex = -1;
+function renderNewPlaceResolved() {
+  const node = $('#newPlaceResolvedCoords');
+  if (!pendingNewPlaceResolved?.location) { node.hidden = true; node.textContent = ''; return; }
+  const [longitude, latitude] = pendingNewPlaceResolved.location.split(',');
+  node.textContent = `高德定位：${pendingNewPlaceResolved.address || pendingNewPlaceResolved.name || ''} · 经度 ${longitude}，纬度 ${latitude}`;
+  node.hidden = false;
+}
+function renderNewPlaceCurrentPhoto(photo = '') {
+  const container = $('#newPlaceCurrentPhoto');
+  const image = $('#newPlaceCurrentPhotoImage');
+  if (!photo) { container.hidden = true; image.removeAttribute('src'); return; }
+  image.src = photo; container.hidden = false;
+}
 function fileToDataUrl(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); }); }
 function confirmNewPlace(initial = {}) {
   $('#placeEditorForm').reset();
@@ -238,7 +251,8 @@ function confirmNewPlace(initial = {}) {
   $('#placeEditorDelete').hidden = true;
   pendingNewPlaceResolved = null; pendingNewPlacePhotos = []; pendingNewPlacePhotoIndex = -1;
   $('#newPlacePhotoCandidates').hidden = true; $('#newPlacePhotoCandidates').replaceChildren();
-  $('#newPlaceAmapStatus').textContent = '填写名称和完整地址后可分别查询；保存前可选一张候选图。';
+  renderNewPlaceResolved(); renderNewPlaceCurrentPhoto();
+  $('#newPlaceAmapStatus').textContent = '填写名称和完整地址后可分别查询；保存不会自动调用高德。';
   $('#newPlaceType').innerHTML = placeTypeOptionsHtml();
   $('#newPlaceType').value = initial.type || placeTypeFilter || 'spot';
   $('#newPlaceName').value = initial.name || '';
@@ -256,10 +270,12 @@ function openPlaceEditor(placeId) {
   $('#placeEditorForm').reset(); editingPlaceId = placeId;
   pendingNewPlaceResolved = place.resolved || null; pendingNewPlacePhotos = []; pendingNewPlacePhotoIndex = -1;
   $('#newPlacePhotoCandidates').hidden = true; $('#newPlacePhotoCandidates').replaceChildren();
+  renderNewPlaceResolved(); renderNewPlaceCurrentPhoto(place.photo);
   $('#newPlaceType').innerHTML = placeTypeOptionsHtml(); $('#newPlaceType').value = place.type || 'spot';
   $('#newPlaceName').value = place.name || ''; $('#newPlaceAddress').value = place.address || ''; $('#newPlaceNote').value = place.note || '';
   $('#newPlaceIntro').value = place.poiDetails?.intro || ''; $('#newPlaceOpenTime').value = place.poiDetails?.openTime || ''; $('#newPlaceRating').value = place.poiDetails?.rating || ''; $('#newPlaceReferenceCost').value = place.poiDetails?.referenceCost || ''; $('#newPlaceTicketPrice').value = place.poiDetails?.ticketPrice || ''; $('#newPlaceTags').value = place.poiDetails?.tags || '';
-  $('#newPlaceAmapStatus').textContent = place.resolved ? `已定位：${place.resolved.name || place.name}。可重新查询位置或图片。` : '填写名称和完整地址后可分别查询；保存前可选一张候选图。';
+  renderNewPlaceResolved();
+  $('#newPlaceAmapStatus').textContent = place.resolved ? `已定位：${place.resolved.name || place.name}。可重新查询位置、图片或 POI 详情；保存不会重复查询。` : '填写名称和完整地址后可分别查询；保存不会自动调用高德。';
   placeEditor.querySelector('h3').textContent = '编辑地点';
   $('#placeEditorDelete').hidden = false;
   placeEditor.showModal(); requestAnimationFrame(() => $('#newPlaceName').focus());
@@ -2352,8 +2368,10 @@ async function queryNewPlaceLocation() {
   try {
     const point = await geocode(address, name);
     pendingNewPlaceResolved = { name: point.name || name, address: point.formatted_address || address, location: point.location };
-    $('#newPlaceAmapStatus').textContent = `已定位：${pendingNewPlaceResolved.name}。${pendingNewPlacePhotos.length ? '已保留图片候选。' : ''}`;
-  } catch (error) { pendingNewPlaceResolved = null; $('#newPlaceAmapStatus').textContent = error.message || '高德位置查询失败，请检查名称和地址。'; }
+    $('#newPlaceAddress').value = pendingNewPlaceResolved.address;
+    renderNewPlaceResolved();
+    $('#newPlaceAmapStatus').textContent = `已定位并回填高德完整地址。${pendingNewPlacePhotos.length ? '已保留图片候选。' : ''}`;
+  } catch (error) { pendingNewPlaceResolved = null; renderNewPlaceResolved(); $('#newPlaceAmapStatus').textContent = error.message || '高德位置查询失败，请检查名称和地址。'; }
   finally { button.disabled = false; button.textContent = '查询高德位置'; }
 }
 async function queryNewPlacePhotos() {
@@ -2381,8 +2399,12 @@ $('#queryNewPlaceDetails').onclick = async event => {
     const data = await response.json(); if (!response.ok) throw new Error(data.error || '高德 POI 详情查询失败');
     const detail = data.poi || {};
     $('#newPlaceIntro').value = detail.intro || ''; $('#newPlaceOpenTime').value = detail.openTime || ''; $('#newPlaceRating').value = detail.rating || ''; $('#newPlaceReferenceCost').value = detail.referenceCost || ''; $('#newPlaceTicketPrice').value = detail.ticketPrice || ''; $('#newPlaceTags').value = detail.tags || '';
-    if (detail.location) pendingNewPlaceResolved = { name: detail.name || name, address: detail.address || address, location: detail.location };
-    $('#newPlaceAmapStatus').textContent = '已填入高德实际返回的 POI 详情；空字段表示高德未提供。';
+    if (detail.location) {
+      pendingNewPlaceResolved = { name: detail.name || name, address: detail.address || address, location: detail.location };
+      $('#newPlaceAddress').value = pendingNewPlaceResolved.address;
+      renderNewPlaceResolved();
+    }
+    $('#newPlaceAmapStatus').textContent = '已填入高德 Web 服务实际返回的 POI 详情；空字段表示该接口未提供。';
   } catch (error) { $('#newPlaceAmapStatus').textContent = error.message || '高德 POI 详情查询失败。'; }
   finally { button.disabled = false; button.textContent = '获取 POI 详情'; }
 };
@@ -2395,19 +2417,13 @@ $('#placeEditorForm').onsubmit = async event => {
   const selectedAmapPhoto = pendingNewPlacePhotos[pendingNewPlacePhotoIndex];
   const poiDetails = { intro: $('#newPlaceIntro').value.trim(), openTime: $('#newPlaceOpenTime').value.trim(), rating: $('#newPlaceRating').value.trim(), referenceCost: $('#newPlaceReferenceCost').value.trim(), ticketPrice: $('#newPlaceTicketPrice').value.trim(), tags: $('#newPlaceTags').value.trim() };
   const draft = { type: $('#newPlaceType').value, name, address, note: $('#newPlaceNote').value.trim(), poiDetails, ...(photoFile ? { photo: await fileToDataUrl(photoFile) } : selectedAmapPhoto ? { photo: selectedAmapPhoto.url, photoSource: `高德 POI · ${selectedAmapPhoto.poiName || name}` } : {}) };
-  const submit = event.submitter; if (submit) { submit.disabled = true; submit.textContent = draft.address ? '保存并查询高德…' : '正在保存…'; }
+  const submit = event.submitter; if (submit) { submit.disabled = true; submit.textContent = '正在保存…'; }
   let place = editingPlaceId ? state.locations.find(item => item.id === editingPlaceId) : findMatchingLocation(state.locations, draft.address, draft.name);
+  const addressChanged = Boolean(place && normalizePlaceLookup(place.address) !== normalizePlaceLookup(draft.address));
   if (!place) place = { id: crypto.randomUUID(), ...draft };
   else Object.assign(place, draft);
-  if (draft.address) {
-    try {
-      const point = pendingNewPlaceResolved && pendingNewPlaceResolved.address === draft.address ? pendingNewPlaceResolved : await geocode(draft.address, draft.name);
-      const samePointPlace = findMatchingLocation(state.locations, draft.address, draft.name, point.location);
-      if (samePointPlace && samePointPlace.id !== place.id) { Object.assign(samePointPlace, draft); place = samePointPlace; }
-      place.resolved = { name: point.name || draft.name, address: point.formatted_address || draft.address, location: point.location };
-    }
-    catch (error) { alert(error.message || '高德暂时无法确认该地点，请检查名称和完整地址后重试。'); if (submit) { submit.disabled = false; submit.textContent = '保存地点'; } return; }
-  }
+  if (pendingNewPlaceResolved?.location) place.resolved = pendingNewPlaceResolved;
+  else if (addressChanged) delete place.resolved;
   if (!state.locations.some(item => item.id === place.id)) state.locations.push(place);
   save();
   renderLocations(); placeEditor.close(); editingPlaceId = null; $('#placeEditorDelete').hidden = true;
