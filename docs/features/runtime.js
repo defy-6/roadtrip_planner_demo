@@ -225,6 +225,10 @@ const placeDropEditor = document.createElement('dialog');
 placeDropEditor.id = 'placeDropEditor'; placeDropEditor.className = 'event-editor';
 placeDropEditor.innerHTML = '<form class="editor-form" method="dialog"><h3>关联地点到行程</h3><p id="placeDropPrompt" class="hint"></p><label id="placeDropTargetLabel" hidden>路程位置<select id="placeDropTarget"></select></label><div class="editor-actions"><button type="button" id="placeDropCancel" class="ghost">取消</button><button type="button" id="placeDropUpdate">更新已关联地点</button><button type="button" id="placeDropReplace">替换关联</button></div></form>';
 document.body.append(placeDropEditor);
+const placeCreateDropEditor = document.createElement('dialog');
+placeCreateDropEditor.id = 'placeCreateDropEditor'; placeCreateDropEditor.className = 'event-editor';
+placeCreateDropEditor.innerHTML = '<form class="editor-form" method="dialog"><h3>新建行程事件</h3><p id="placeCreateDropPrompt" class="hint"></p><div class="editor-actions"><button type="button" id="placeCreateDropCancel" class="ghost">取消</button><button type="button" id="placeCreateDropConfirm">确认新建</button></div></form>';
+document.body.append(placeCreateDropEditor);
 const placeCategoryEditor = document.createElement('dialog');
 placeCategoryEditor.id = 'placeCategoryEditor'; placeCategoryEditor.className = 'event-editor';
 placeCategoryEditor.innerHTML = '<form id="placeCategoryEditorForm" class="editor-form" method="dialog"><h3>新增地点类别</h3><p class="hint">仅当前计划可用；地点库中的地点仍可跨计划复用。</p><label>类别名称<input id="newPlaceCategoryName" required maxlength="16" placeholder="例如：露营地"></label><label>图例颜色<input id="newPlaceCategoryColor" type="color" value="#2f73a9"></label><div class="editor-actions"><button type="button" id="placeCategoryEditorCancel" class="ghost">取消</button><button type="submit">保存类别</button></div></form>';
@@ -236,6 +240,7 @@ let pendingNewPlaceResolved = null;
 let pendingNewPlacePhotos = [];
 let pendingNewPlacePhotoIndex = -1;
 let draggingPlaceId = '';
+let clearPlaceDragTimer;
 function choosePlaceDropAction(event, place) {
   const route = event.type === 'drive' ? routeForScheduleEvent(event) : null;
   const links = route ? { ...event.routeLinks, ...route } : event.routeLinks || {};
@@ -260,6 +265,16 @@ function choosePlaceDropAction(event, place) {
     $('#placeDropReplace').onclick = () => close('replace');
     $('#placeDropUpdate').onclick = () => close('update');
     placeDropEditor.oncancel = modalEvent => { modalEvent.preventDefault(); close(null); };
+  });
+}
+function confirmPlaceDropCreation(place, date, start, end) {
+  $('#placeCreateDropPrompt').textContent = `在 ${date} ${start}–${end} 新建“${place.name || '未命名地点'}”事件，并关联该地点？`;
+  placeCreateDropEditor.showModal();
+  return new Promise(resolve => {
+    const close = confirmed => { placeCreateDropEditor.close(); resolve(confirmed); };
+    $('#placeCreateDropCancel').onclick = () => close(false);
+    $('#placeCreateDropConfirm').onclick = () => close(true);
+    placeCreateDropEditor.oncancel = modalEvent => { modalEvent.preventDefault(); close(false); };
   });
 }
 function applyPlaceDrop(event, place, choice) {
@@ -922,6 +937,7 @@ function renderLocations() {
     };
     card.ondragstart = event => {
       if (placeSelectionMode) { event.preventDefault(); return; }
+      clearTimeout(clearPlaceDragTimer);
       event.dataTransfer.setData('application/x-roadtrip-place', card.dataset.placeId);
       draggingPlaceId = card.dataset.placeId;
       event.dataTransfer.effectAllowed = 'copy';
@@ -929,11 +945,11 @@ function renderLocations() {
     };
     card.ondragend = () => {
       // 部分浏览器会在 drop 之前触发 dragend；延后一帧再清除来源，保证落点能读取到地点。
-      setTimeout(() => {
+      clearPlaceDragTimer = setTimeout(() => {
         draggingPlaceId = '';
         card.classList.remove('dragging-place');
         document.querySelectorAll('.calendar-day.drop-target,.calendar-drop-preview').forEach(item => item.classList.remove('drop-target') || item.remove());
-      }, 0);
+      }, 180);
     };
     return;
     const update = () => {
@@ -2254,6 +2270,7 @@ $('#schedule').ondrop = event => {
   // Safari / Chromium 对自定义 drag data 的 drop 读取并不完全一致，优先使用拖拽开始时保存的来源。
   const placeId = draggingPlaceId || event.dataTransfer.getData('application/x-roadtrip-place');
   if (placeId) {
+    clearTimeout(clearPlaceDragTimer);
     draggingPlaceId = '';
     document.querySelectorAll('.calendar-day.drop-target,.calendar-drop-preview').forEach(item => item.classList.remove('drop-target') || item.remove());
     const place = state.locations.find(item => item.id === placeId); if (!place) return;
@@ -2267,8 +2284,12 @@ $('#schedule').ondrop = event => {
     }
     const raw = 7 * 60 + (event.clientY - day.getBoundingClientRect().top) / scheduleHourHeight() * 60;
     const start = Math.max(7 * 60, Math.min(22 * 60 + 30, Math.round(raw / 5) * 5));
-    state.schedule.push({ id: crypto.randomUUID(), date: day.dataset.date, start: minuteToClock(start), end: minuteToClock(Math.min(23 * 60, start + 60)), type: place.type === 'flight' ? 'transport' : (place.type === 'drive' ? 'spot' : place.type || 'spot'), title: place.name || '新建安排', detail: '', locationId: place.id });
-    save(); renderSchedule(state.schedule); applyDayFilter(); renderLocations(); showDayOverview(state.dayFilter);
+    const end = minuteToClock(Math.min(23 * 60, start + 60));
+    confirmPlaceDropCreation(place, day.dataset.date, minuteToClock(start), end).then(confirmed => {
+      if (!confirmed) return;
+      state.schedule.push({ id: crypto.randomUUID(), date: day.dataset.date, start: minuteToClock(start), end, type: place.type === 'flight' ? 'transport' : (place.type === 'drive' ? 'spot' : place.type || 'spot'), title: place.name || '新建安排', detail: '', locationId: place.id });
+      save(); renderSchedule(state.schedule); applyDayFilter(); renderLocations(); showDayOverview(state.dayFilter);
+    });
     return;
   }
   let indexes = activeScheduleDragIndexes.length ? [...activeScheduleDragIndexes] : null; if (!indexes) { try { indexes = JSON.parse(event.dataTransfer.getData('text/plain')); } catch { indexes = [Number(event.dataTransfer.getData('text/plain'))]; } }
