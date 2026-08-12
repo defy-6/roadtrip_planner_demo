@@ -21,7 +21,7 @@ document.head.append(Object.assign(document.createElement('link'), { rel: 'style
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.locations-panel{margin-top:18px;padding-top:16px;border-top:1px solid #e4e6df}.locations-panel h3{margin:0;font-size:15px}.places{display:grid;gap:9px;margin-top:10px}.place-card{display:grid;gap:6px;padding:10px;border:1px dashed #cdd9d0;border-radius:8px;background:#fbfdfb}.place-card>div{display:flex;align-items:center;gap:7px}.place-card b{font-size:13px}.place-type{padding:2px 5px;border-radius:4px;background:#eee2f6;color:#58366c;font-size:10px;font-weight:700}.place-card input,.place-card textarea{width:100%;border:0;border-bottom:1px solid #e6e6e1;padding:4px 0;background:transparent;font:12px inherit}.place-card textarea{height:28px}.place-card button{justify-self:start;padding:4px 7px;background:transparent;border:1px solid #9dbaaa;border-radius:5px;color:#1d5b46;font:12px inherit}.place-card .place-delete{color:#9a5346;border-color:#dcb7b0}.event-place-link{display:block;margin-top:-2px;color:#607569;font-size:11px}.event-edit{margin-top:2px;justify-self:start;padding:4px 7px;background:#eff5ef;border:1px solid #9dbaaa;border-radius:5px;color:#1d5b46;font:12px inherit;cursor:pointer}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.calendar-block.compact{padding:1px 5px;line-height:1}.calendar-block.compact time{font-size:10px;white-space:nowrap}.calendar-block.compact em,.calendar-block.compact b,.calendar-block.compact small{display:none}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.schedule-selecting{cursor:crosshair!important}.calendar-marquee{position:fixed;z-index:1200;border:1px dashed #1d6b4f;background:#6aa98230;pointer-events:none}.calendar-block.batch-selected{outline:2px solid #d97706;outline-offset:2px;filter:saturate(1.25)}.calendar-drop-preview{position:absolute;left:5px;right:5px;border:2px dashed #1d6b4f;border-radius:6px;background:#ffffffdd;color:#174735;pointer-events:none;z-index:20;display:flex;align-items:flex-start;padding:3px 7px;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;box-shadow:0 1px 5px #173c3240}' }));
-document.head.append(Object.assign(document.createElement('style'), { textContent: '.map-route-legend{position:absolute;left:10px;bottom:10px;z-index:700;max-width:calc(100% - 20px);background:#fffffff0;border:1px solid #d8e1da;border-radius:7px;padding:6px 8px;display:grid;gap:3px;font-size:10px;box-shadow:0 2px 8px #173c3220}.map-route-legend b{font-size:10px;color:#315540}.map-route-legend div{display:flex;align-items:center;gap:5px;white-space:nowrap}.map-route-legend i{width:8px;height:8px;border:1px solid #fff;border-radius:50%;box-shadow:0 0 0 1px #173c3228;display:inline-block}.map-route-legend i.route-legend-swatch{width:17px;height:3px;border:0;border-radius:2px;box-shadow:none}.map-route-legend small{max-width:190px;color:#607569;line-height:1.25}.route-direction-arrow{display:grid;width:12px;height:12px;place-items:center;color:#1d5b46;font:500 11px/1 system-ui,sans-serif;text-shadow:0 0 1px #fff,0 0 2px #fff;transform:rotate(var(--bearing));transform-origin:center;pointer-events:auto}.route-direction-arrow.is-highlighted{width:18px;height:18px;color:#fff!important;font-size:15px;text-shadow:0 0 2px #174260,0 0 5px #174260,0 0 8px #fff}' }));
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.map-route-legend{position:absolute;left:10px;bottom:10px;z-index:700;max-width:calc(100% - 20px);background:#fffffff0;border:1px solid #d8e1da;border-radius:7px;padding:6px 8px;display:grid;gap:3px;font-size:10px;box-shadow:0 2px 8px #173c3220}.map-route-legend b{font-size:10px;color:#315540}.map-route-legend div{display:flex;align-items:center;gap:5px;white-space:nowrap}.map-route-legend i{width:8px;height:8px;border:1px solid #fff;border-radius:50%;box-shadow:0 0 0 1px #173c3228;display:inline-block}.map-route-legend i.route-legend-swatch{width:17px;height:3px;border:0;border-radius:2px;box-shadow:none}.map-route-legend small{max-width:190px;color:#607569;line-height:1.25}.route-direction-arrow{display:grid;width:12px;height:12px;place-items:center;color:#1d5b46;font:500 11px/1 system-ui,sans-serif;text-shadow:0 0 1px #fff,0 0 2px #fff;transform:rotate(var(--bearing));transform-origin:center;pointer-events:auto}.route-direction-arrow.is-highlighted{width:18px;height:18px;color:#fff!important;font-size:15px;text-shadow:0 0 2px #174260,0 0 5px #174260,0 0 8px #fff}.route-sequence-badge{display:grid;width:22px;height:22px;place-items:center;border:2px solid #fff;border-radius:999px;background:var(--route-sequence-color);color:#fff;font:700 12px/1 system-ui,sans-serif;box-shadow:0 1px 5px #173c3260;text-shadow:none}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.weather-meta{display:block!important;color:#245e84!important}' }));
 let map;
 let routeLayer;
@@ -1182,6 +1182,15 @@ function addRouteDirectionArrows(latLngs, color, event, routeIndex) {
     return [marker];
   });
 }
+function addRouteSequenceBadge(latLngs, color, sequence) {
+  const pose = routeArrowPose(latLngs, .5); if (!pose) return null;
+  return L.marker(pose.latLng, {
+    icon: L.divIcon({ className: 'route-sequence-badge-wrap', iconSize: [22, 22], iconAnchor: [11, 11], html: `<span class="route-sequence-badge" style="--route-sequence-color:${color}">${sequence}</span>` }),
+    interactive: false,
+    keyboard: false,
+    zIndexOffset: 700
+  }).addTo(dayOverviewLayer);
+}
 function renderMapRouteLegend(date) {
   if (!mapRouteLegend) { mapRouteLegend = document.createElement('div'); mapRouteLegend.className = 'map-route-legend'; $('#map')?.append(mapRouteLegend); }
   if (!date && !Number.isInteger(state.selectedIndex)) {
@@ -1351,6 +1360,7 @@ async function showDayOverview(date) {
     });
     line.addTo(dayOverviewLayer);
     line._routeArrowMarkers = addRouteDirectionArrows(displayLatLngs, overviewStyle.color, event, routeIndex);
+    if (date) line._routeSequenceBadge = addRouteSequenceBadge(displayLatLngs, overviewStyle.color, routeIndex + 1);
     displayedRouteCount += 1;
   });
   if (routeCacheChanged) save();
