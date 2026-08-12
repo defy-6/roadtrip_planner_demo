@@ -693,12 +693,17 @@ function showRouteOnMap(path, locations, nodes, routeInfo = {}) {
     }).addTo(routeLayer);
   });
   const photoCalloutOccupied = [];
+  const renderedPhotoCallouts = new Set();
   nodes.forEach((node, index) => {
     const point = locations[index]; if (!point) return;
     const [lng, lat] = mapCoords(...point.split(',').map(Number));
     const place = state.locations.find(item => item.id === node.id) || node;
     L.circleMarker([lat, lng], selectedPointStyle(place.type || 'drive', { radius: 8, weight: 2.5, interactive: false })).addTo(routeLayer);
-    addSelectedPlacePhotoCallout(routeLayer, [lat, lng], place, '', photoCalloutOccupied);
+    const calloutKey = place.id || `${lat.toFixed(6)},${lng.toFixed(6)}`;
+    if (!renderedPhotoCallouts.has(calloutKey)) {
+      renderedPhotoCallouts.add(calloutKey);
+      addSelectedPlacePhotoCallout(routeLayer, [lat, lng], place, '', photoCalloutOccupied);
+    }
   });
   setOverviewFocusOpacity(true);
   fitSelectionWithDayContext(routeLayer.getBounds(), 13);
