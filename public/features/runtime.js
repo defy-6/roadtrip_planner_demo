@@ -221,6 +221,10 @@ const placeEditor = document.createElement('dialog');
 placeEditor.id = 'placeEditor'; placeEditor.className = 'event-editor';
 placeEditor.innerHTML = '<form id="placeEditorForm" class="editor-form" method="dialog"><h3>新增地点</h3><label>地点类型<select id="newPlaceType"></select></label><label>地点名称<input id="newPlaceName" required placeholder="例如：赛里木湖东门"></label><label>详细地址<input id="newPlaceAddress" placeholder="地址未确定可留空"></label><div class="new-place-query"><button type="button" id="queryNewPlaceLocation">查询高德位置</button><button type="button" id="queryNewPlacePhotos">查询高德图片</button><button type="button" id="queryNewPlaceDetails">获取 POI 详情</button><small id="newPlaceAmapStatus">填写名称和完整地址后可分别查询；保存不会自动调用高德。</small></div><p id="newPlaceResolvedCoords" class="resolved-place" hidden></p><div id="newPlaceCurrentPhoto" class="place-editor-current-photo" hidden><img id="newPlaceCurrentPhotoImage" alt="当前地点图片"><small>当前地点图片；查询高德图片后可选择替换。</small></div><div id="newPlacePhotoCandidates" class="new-place-photo-candidates" hidden></div><label>地点图片（可选）<input id="newPlacePhoto" type="file" accept="image/*"></label><fieldset class="place-detail-fields"><legend>POI 详情（可人工修改）</legend><label>简介<textarea id="newPlaceIntro" rows="2" placeholder="高德未提供可留空"></textarea></label><div class="editor-grid"><label>营业时间<input id="newPlaceOpenTime" placeholder="高德未提供可留空"></label><label>评分<input id="newPlaceRating" placeholder="例如：4.6"></label><label>参考费用<input id="newPlaceReferenceCost" placeholder="例如：¥120/人"></label><label>门票<input id="newPlaceTicketPrice" placeholder="高德未提供可留空"></label></div><label>标签<input id="newPlaceTags" placeholder="例如：湖泊、观景、亲子"></label><label>人工备注<textarea id="newPlaceNote" rows="3" placeholder="预约、实际门票、营业时间调整等"></textarea></label></fieldset><div class="editor-actions"><button type="button" id="placeEditorDelete" class="danger" hidden>删除地点</button><button type="button" id="placeEditorCancel" class="ghost">取消</button><button type="submit">保存地点</button></div></form>';
 document.body.append(placeEditor);
+const placeDropEditor = document.createElement('dialog');
+placeDropEditor.id = 'placeDropEditor'; placeDropEditor.className = 'event-editor';
+placeDropEditor.innerHTML = '<form class="editor-form" method="dialog"><h3>关联地点到行程</h3><p id="placeDropPrompt" class="hint"></p><label id="placeDropTargetLabel" hidden>路程位置<select id="placeDropTarget"></select></label><div class="editor-actions"><button type="button" id="placeDropCancel" class="ghost">取消</button><button type="button" id="placeDropUpdate">更新已关联地点</button><button type="button" id="placeDropReplace">替换关联</button></div></form>';
+document.body.append(placeDropEditor);
 const placeCategoryEditor = document.createElement('dialog');
 placeCategoryEditor.id = 'placeCategoryEditor'; placeCategoryEditor.className = 'event-editor';
 placeCategoryEditor.innerHTML = '<form id="placeCategoryEditorForm" class="editor-form" method="dialog"><h3>新增地点类别</h3><p class="hint">仅当前计划可用；地点库中的地点仍可跨计划复用。</p><label>类别名称<input id="newPlaceCategoryName" required maxlength="16" placeholder="例如：露营地"></label><label>图例颜色<input id="newPlaceCategoryColor" type="color" value="#2f73a9"></label><div class="editor-actions"><button type="button" id="placeCategoryEditorCancel" class="ghost">取消</button><button type="submit">保存类别</button></div></form>';
@@ -231,6 +235,50 @@ let placeSelectionMode = false;
 let pendingNewPlaceResolved = null;
 let pendingNewPlacePhotos = [];
 let pendingNewPlacePhotoIndex = -1;
+let draggingPlaceId = '';
+function choosePlaceDropAction(event, place) {
+  const route = event.type === 'drive' ? routeForScheduleEvent(event) : null;
+  const links = route ? { ...event.routeLinks, ...route } : event.routeLinks || {};
+  const targets = event.type === 'drive'
+    ? [
+      { key: 'originPlaceId', label: '起点', id: links.originPlaceId },
+      ...(links.viaPlaceIds || []).map((id, index) => ({ key: 'viaPlaceIds', viaIndex: index, label: `途经点 ${index + 1}`, id })),
+      { key: 'destinationPlaceId', label: '终点', id: links.destinationPlaceId }
+    ]
+    : [{ key: 'locationId', label: '关联地点', id: event.locationId }];
+  const select = $('#placeDropTarget');
+  select.innerHTML = targets.map((target, index) => {
+    const current = state.locations.find(item => item.id === target.id);
+    return `<option value="${index}">${escapeHtml(target.label)}：${escapeHtml(current?.name || '未关联')}</option>`;
+  }).join('');
+  $('#placeDropTargetLabel').hidden = targets.length < 2;
+  $('#placeDropPrompt').textContent = `将“${place.name || '未命名地点'}”拖入“${event.title || '未命名事件'}”。请选择处理方式。`;
+  placeDropEditor.showModal();
+  return new Promise(resolve => {
+    const close = action => { placeDropEditor.close(); resolve(action ? { action, target: targets[Number(select.value) || 0] } : null); };
+    $('#placeDropCancel').onclick = () => close(null);
+    $('#placeDropReplace').onclick = () => close('replace');
+    $('#placeDropUpdate').onclick = () => close('update');
+    placeDropEditor.oncancel = modalEvent => { modalEvent.preventDefault(); close(null); };
+  });
+}
+function applyPlaceDrop(event, place, choice) {
+  if (!choice) return false;
+  const route = event.type === 'drive' ? routeForScheduleEvent(event) : null;
+  const links = route ? { ...event.routeLinks, ...route } : event.routeLinks || {};
+  const target = choice.target;
+  if (choice.action === 'update' && target.id) {
+    const current = state.locations.find(item => item.id === target.id);
+    if (current && current.id !== place.id) Object.assign(current, structuredClone({ ...place, id: current.id }));
+  } else if (target.key === 'viaPlaceIds') {
+    links.viaPlaceIds ||= []; links.viaPlaceIds[target.viaIndex] = place.id;
+  } else links[target.key] = place.id;
+  if (event.type === 'drive') {
+    event.routeLinks = { ...event.routeLinks, ...links };
+    if (route) Object.assign(route, links);
+  } else event.locationId = choice.action === 'update' && target.id ? target.id : place.id;
+  return true;
+}
 function renderNewPlaceResolved() {
   const node = $('#newPlaceResolvedCoords');
   if (!pendingNewPlaceResolved?.location) { node.hidden = true; node.textContent = ''; return; }
@@ -850,7 +898,7 @@ function renderLocations() {
   const typeOrder = ['spot', 'geography', 'food', 'hotel', 'shopping', 'flight', 'transport', 'service', 'fuel', 'supply', ...customPlaceCategories().map(category => category.id), 'drive'];
   const visibleLocations = state.locations.filter(place => (!placeTypeFilter || place.type === placeTypeFilter) && (!query || `${place.name || ''} ${place.address || ''} ${place.note || ''} ${placeTypeName(place.type)}`.toLowerCase().includes(query))).sort((a, b) => Number(Boolean(b.photo)) - Number(Boolean(a.photo)) || (typeOrder.indexOf(a.type) < 0 ? 99 : typeOrder.indexOf(a.type)) - (typeOrder.indexOf(b.type) < 0 ? 99 : typeOrder.indexOf(b.type)) || String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN'));
   $('#placeCount').textContent = `(${visibleLocations.length}/${state.locations.length})`;
-  const renderPlaceCard = place => `<article class="place-card place-card-summary ${place.photo ? 'has-photo' : 'no-photo'}${placeSelectionMode ? ' selection-mode' : ''}" data-place-id="${place.id}" tabindex="0" role="button" aria-label="编辑地点：${escapeHtml(place.name || '未命名地点')}"><div class="place-card-summary-title">${placeSelectionMode ? `<input type="checkbox" class="place-select" aria-label="选择 ${escapeHtml(place.name || '未命名地点')}" ${selectedPlaceIds.has(place.id) ? 'checked' : ''}>` : ''}<span class="place-type type-${escapeHtml(place.type || 'spot')}" style="background:${placeTypeColor(place.type)}22;color:${placeTypeColor(place.type)}">${escapeHtml(placeTypeName(place.type))}</span><b>${escapeHtml(place.name || '未命名地点')}</b></div>${place.photo ? `<img class="place-photo-preview" src="${escapeHtml(place.photo)}" alt="${escapeHtml(place.name || '地点')}图片">` : ''}</article>`;
+  const renderPlaceCard = place => `<article class="place-card place-card-summary ${place.photo ? 'has-photo' : 'no-photo'}${placeSelectionMode ? ' selection-mode' : ''}" data-place-id="${place.id}" tabindex="0" role="button" draggable="${placeSelectionMode ? 'false' : 'true'}" aria-label="编辑地点：${escapeHtml(place.name || '未命名地点')}"><div class="place-card-summary-title">${placeSelectionMode ? `<input type="checkbox" class="place-select" aria-label="选择 ${escapeHtml(place.name || '未命名地点')}" ${selectedPlaceIds.has(place.id) ? 'checked' : ''}>` : ''}<span class="place-type type-${escapeHtml(place.type || 'spot')}" style="background:${placeTypeColor(place.type)}22;color:${placeTypeColor(place.type)}">${escapeHtml(placeTypeName(place.type))}</span><b>${escapeHtml(place.name || '未命名地点')}</b></div>${place.photo ? `<img class="place-photo-preview" src="${escapeHtml(place.photo)}" alt="${escapeHtml(place.name || '地点')}图片">` : ''}</article>`;
   const photoPlaces = visibleLocations.filter(place => place.photo);
   const plainPlaces = visibleLocations.filter(place => !place.photo);
   places.innerHTML = visibleLocations.length ? `${photoPlaces.length ? `<div class="place-grid place-grid-photos">${photoPlaces.map(renderPlaceCard).join('')}</div>` : ''}${plainPlaces.length ? `<div class="place-grid place-grid-plain">${plainPlaces.map(renderPlaceCard).join('')}</div>` : ''}` : '<p class="hint">没有符合条件的地点。</p>';
@@ -872,6 +920,14 @@ function renderLocations() {
       if (event.key === 'Enter') { event.preventDefault(); openPlaceEditor(card.dataset.placeId); }
       if (event.key === ' ') { event.preventDefault(); showPlaceOnMap(card.dataset.placeId); }
     };
+    card.ondragstart = event => {
+      if (placeSelectionMode) { event.preventDefault(); return; }
+      event.dataTransfer.setData('application/x-roadtrip-place', card.dataset.placeId);
+      draggingPlaceId = card.dataset.placeId;
+      event.dataTransfer.effectAllowed = 'copy';
+      card.classList.add('dragging-place');
+    };
+    card.ondragend = () => { draggingPlaceId = ''; card.classList.remove('dragging-place'); };
     return;
     const update = () => {
       const place = state.locations.find(item => item.id === card.dataset.placeId); if (!place) return;
@@ -2161,6 +2217,23 @@ $('#schedule').ondragstart = event => {
 $('#schedule').ondragend = event => { activeScheduleDragIndexes = []; document.querySelectorAll('.calendar-block.dragging').forEach(item => item.classList.remove('dragging')); document.querySelectorAll('.calendar-day.drop-target,.calendar-drop-preview').forEach(day => day.classList.remove('drop-target') || day.remove()); };
 $('#schedule').ondragover = event => {
   const day = event.target.closest('.calendar-day'); if (!day) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+  const placeId = draggingPlaceId || (event.dataTransfer.types.includes('application/x-roadtrip-place') ? event.dataTransfer.getData('application/x-roadtrip-place') : '');
+  if (placeId) {
+    const place = state.locations.find(item => item.id === placeId);
+    const block = event.target.closest('.calendar-block');
+    document.querySelectorAll('.calendar-day.drop-target').forEach(item => item.classList.toggle('drop-target', item === day));
+    let preview = day.querySelector('.calendar-drop-preview'); if (!preview) { preview = document.createElement('div'); preview.className = 'calendar-drop-preview'; day.append(preview); }
+    if (block) {
+      preview.textContent = `关联：${place?.name || '地点'} → ${state.schedule[Number(block.dataset.scheduleIndex)]?.title || '事件'}`;
+      Object.assign(preview.style, { top: block.style.top, height: block.style.height });
+    } else {
+      const raw = 7 * 60 + (event.clientY - day.getBoundingClientRect().top) / scheduleHourHeight() * 60;
+      const start = Math.max(7 * 60, Math.min(22 * 60 + 30, Math.round(raw / 5) * 5));
+      preview.textContent = `新建：${place?.name || '地点'} · ${minuteToClock(start)}–${minuteToClock(Math.min(23 * 60, start + 60))}`;
+      Object.assign(preview.style, { top: `${(start - 7 * 60) / 60 * scheduleHourHeight()}px`, height: `${Math.max(22, scheduleHourHeight() - 2)}px` });
+    }
+    return;
+  }
   document.querySelectorAll('.calendar-day.drop-target').forEach(item => item.classList.toggle('drop-target', item === day));
   const indexes = activeScheduleDragIndexes;
   const first = state.schedule[indexes?.[0]]; if (!first) return;
@@ -2170,7 +2243,25 @@ $('#schedule').ondragover = event => {
 };
 $('#schedule').ondrop = event => {
   const day = event.target.closest('.calendar-day'); if (!day) return;
-  event.preventDefault(); let indexes = activeScheduleDragIndexes.length ? [...activeScheduleDragIndexes] : null; if (!indexes) { try { indexes = JSON.parse(event.dataTransfer.getData('text/plain')); } catch { indexes = [Number(event.dataTransfer.getData('text/plain'))]; } }
+  event.preventDefault();
+  const placeId = event.dataTransfer.getData('application/x-roadtrip-place');
+  if (placeId) {
+    const place = state.locations.find(item => item.id === placeId); if (!place) return;
+    const block = event.target.closest('.calendar-block');
+    if (block) {
+      choosePlaceDropAction(state.schedule[Number(block.dataset.scheduleIndex)], place).then(choice => {
+        if (!applyPlaceDrop(state.schedule[Number(block.dataset.scheduleIndex)], place, choice)) return;
+        save(); renderSchedule(state.schedule); applyDayFilter(); renderLocations(); showDayOverview(state.dayFilter);
+      });
+      return;
+    }
+    const raw = 7 * 60 + (event.clientY - day.getBoundingClientRect().top) / scheduleHourHeight() * 60;
+    const start = Math.max(7 * 60, Math.min(22 * 60 + 30, Math.round(raw / 5) * 5));
+    state.schedule.push({ id: crypto.randomUUID(), date: day.dataset.date, start: minuteToClock(start), end: minuteToClock(Math.min(23 * 60, start + 60)), type: place.type === 'flight' ? 'transport' : (place.type === 'drive' ? 'spot' : place.type || 'spot'), title: place.name || '新建安排', detail: '', locationId: place.id });
+    save(); renderSchedule(state.schedule); applyDayFilter(); renderLocations(); showDayOverview(state.dayFilter);
+    return;
+  }
+  let indexes = activeScheduleDragIndexes.length ? [...activeScheduleDragIndexes] : null; if (!indexes) { try { indexes = JSON.parse(event.dataTransfer.getData('text/plain')); } catch { indexes = [Number(event.dataTransfer.getData('text/plain'))]; } }
   indexes = indexes.map(Number).filter(index => state.schedule[index]); if (!indexes.length) return;
   scheduleUndoStack.push(JSON.stringify(state.schedule)); if (scheduleUndoStack.length > 20) scheduleUndoStack.shift();
   const bounds = day.getBoundingClientRect(); const startMinute = 7 * 60; const hourHeight = scheduleHourHeight(); const rawMinute = startMinute + (event.clientY - bounds.top) / hourHeight * 60; const nextStart = snapScheduleDrop(day.dataset.date, rawMinute, indexes);
@@ -2387,6 +2478,7 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.locations-panel>.places{grid-auto-rows:max-content!important;align-items:start!important}.place-card.place-card-summary{height:auto!important;align-self:start!important;overflow:hidden}.place-card.place-card-summary>.place-photo-preview{display:block!important;min-width:0!important;min-height:0!important;max-height:none!important}.place-card.place-card-summary>.place-photo-placeholder{min-width:0!important;min-height:0!important}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.locations-panel>.places{grid-auto-rows:auto!important;align-items:stretch!important}.place-card.place-card-summary{height:100%!important;box-sizing:border-box}.place-card.place-card-summary>.place-photo-preview,.place-card.place-card-summary>.place-photo-placeholder{aspect-ratio:16 / 9!important;min-height:0!important}.place-card.place-card-summary>.place-photo-preview{object-fit:cover!important}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.locations-panel>.places{display:block!important}.place-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;align-items:start}.place-grid+.place-grid{margin-top:9px}.place-grid-photos{grid-auto-rows:1fr}.place-grid-photos .place-card.place-card-summary{height:100%!important}.place-grid-plain .place-card.place-card-summary{height:auto!important}.place-card.place-card-summary.no-photo{min-height:0!important}.place-card.place-card-summary.no-photo .place-photo-preview,.place-card.place-card-summary.no-photo .place-photo-placeholder{display:none!important}@media(max-width:560px){.place-grid{grid-template-columns:1fr}}' }));
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.place-card-summary[draggable="true"]{cursor:grab}.place-card-summary.dragging-place{opacity:.45;outline:2px dashed #1d6b4f;cursor:grabbing}.calendar-day.drop-target{background:#edf7f0!important}.calendar-day.drop-target .calendar-block:hover{outline:2px solid #1d6b4f;outline-offset:2px}.place-drop-editor{}' }));
 $('#placeEditorCancel').onclick = cancelPlaceConfirmation;
 placeEditor.oncancel = event => { event.preventDefault(); cancelPlaceConfirmation(); };
 $('#placeEditorDelete').onclick = () => {
