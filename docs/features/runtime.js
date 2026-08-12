@@ -1302,7 +1302,9 @@ async function showDayOverview(date) {
     } catch { /* 单条路线失败时仍显示当天其他路线与地点。 */ }
   }
   const offsets = routeRenderRecords.map(() => 0);
-  if (!date) {
+  // 不论是全部日期还是单日，近距离共享走廊的路线都采用同一分道逻辑。
+  // 单日优先按当天路线的时间顺序决定平移方向，确保渐变色线路仍然清晰可辨。
+  if (routeRenderRecords.length > 1) {
     const nearbyGraph = routeRenderRecords.map(() => new Set());
     for (let first = 0; first < routeRenderRecords.length; first += 1) for (let second = first + 1; second < routeRenderRecords.length; second += 1) {
       const firstRoute = routeRenderRecords[first].latLngs, secondRoute = routeRenderRecords[second].latLngs;
@@ -1321,7 +1323,9 @@ async function showDayOverview(date) {
       // 每个连续近距离组只保留一条最长主路线；其他路线都相对这条主路线移动。
       const main = component.reduce((best, current) => routeLengthMeters(routeRenderRecords[current].latLngs) > routeLengthMeters(routeRenderRecords[best].latLngs) ? current : best, component[0]);
       component.filter(current => current !== main).forEach(current => {
-        const direction = `${routeRenderRecords[current].event.date}:${routeRenderRecords[current].routeIndex}`.localeCompare(`${routeRenderRecords[main].event.date}:${routeRenderRecords[main].routeIndex}`) <= 0 ? -1 : 1;
+        const currentKey = `${routeRenderRecords[current].event.date}:${routeRenderRecords[current].event.start || '99:99'}:${routeRenderRecords[current].routeIndex}`;
+        const mainKey = `${routeRenderRecords[main].event.date}:${routeRenderRecords[main].event.start || '99:99'}:${routeRenderRecords[main].routeIndex}`;
+        const direction = currentKey.localeCompare(mainKey) <= 0 ? -1 : 1;
         offsets[current] = direction * 5;
       });
     });
