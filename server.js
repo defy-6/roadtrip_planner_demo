@@ -37,6 +37,11 @@ app.use(express.static(path.join(root, 'public')));
 
 const key = process.env.AMAP_WEB_SERVICE_KEY;
 const qweatherKey = process.env.QWEATHER_API_KEY;
+const poiFullAddress = poi => {
+  const base = `${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}`.trim();
+  const name = String(poi.name || '').trim();
+  return name && !base.includes(name) ? `${base}${base ? '·' : ''}${name}` : (base || name);
+};
 const amap = async (endpoint, params) => {
   if (!key) throw new Error('未配置 AMAP_WEB_SERVICE_KEY。请复制 .env.example 为 .env 后填写。');
   const sortedParams = Object.fromEntries(Object.entries(params).sort(([a], [b]) => a.localeCompare(b)));
@@ -87,7 +92,7 @@ app.get('/api/geocode', async (req, res) => {
         return score(b) - score(a);
       });
       if (!province || candidates.length) {
-        res.json({ status: '1', info: 'OK', infocode: '10000', count: String(ordered.length), geocodes: ordered.map(item => ({ formatted_address: item.address ? `${item.pname || ''}${item.cityname || ''}${item.adname || ''}${item.address}` : item.name, location: item.location, level: '兴趣点', name: item.name, type: item.type })) });
+        res.json({ status: '1', info: 'OK', infocode: '10000', count: String(ordered.length), geocodes: ordered.map(item => ({ formatted_address: poiFullAddress(item), location: item.location, level: '兴趣点', name: item.name, type: item.type })) });
         return;
       }
     }
@@ -110,7 +115,7 @@ app.get('/api/place-photos', async (req, res) => {
       const nameScore = [...new Set(name.replace(/[\s·()（）]/g, ''))].filter(char => (poi.name || '').includes(char)).length;
       return { poi, score: (poi.name === name ? 100 : poi.name?.includes(name) ? 45 : 0) + nameScore + (province && text.includes(province) ? 25 : 0) };
     }).sort((a, b) => b.score - a.score).slice(0, 3);
-    const photos = candidates.flatMap(({ poi }) => poiPhotos(poi).slice(0, 4).map(photo => ({ url: photo.url, title: photo.title || poi.name || name, poiName: poi.name || name, address: `${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}` }))).filter(photo => photo.url);
+    const photos = candidates.flatMap(({ poi }) => poiPhotos(poi).slice(0, 4).map(photo => ({ url: photo.url, title: photo.title || poi.name || name, poiName: poi.name || name, address: poiFullAddress(poi) }))).filter(photo => photo.url);
     res.json({ photos: photos.slice(0, 8) });
   } catch (error) { res.status(400).json({ error: error.message || '高德图片查询失败' }); }
 });
@@ -133,7 +138,7 @@ app.get('/api/place-details', async (req, res) => {
     if (!poi) throw new Error('高德未找到对应地点');
     const ext = poi.business || poi.biz_ext || {};
     const text = value => Array.isArray(value) ? value.filter(Boolean).join('、') : String(value || '');
-    res.json({ poi: { id: poi.id || '', name: poi.name || name, intro: text(poi.intro || poi.description), openTime: text(ext.opentime_week || ext.opentime_today || poi.opentime_week || poi.opentime || poi.opening_hours), rating: text(ext.rating || poi.rating), referenceCost: text(ext.cost || poi.cost), tags: text(ext.keytag || ext.rectag || poi.tag || poi.alias), ticketPrice: text(poi.price || ext.price), address: `${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}`, location: poi.location || '' } });
+    res.json({ poi: { id: poi.id || '', name: poi.name || name, intro: text(poi.intro || poi.description), openTime: text(ext.opentime_week || ext.opentime_today || poi.opentime_week || poi.opentime || poi.opening_hours), rating: text(ext.rating || poi.rating), referenceCost: text(ext.cost || poi.cost), tags: text(ext.keytag || ext.rectag || poi.tag || poi.alias), ticketPrice: text(poi.price || ext.price), address: poiFullAddress(poi), location: poi.location || '' } });
   } catch (error) { res.status(400).json({ error: error.message || '高德 POI 详情查询失败' }); }
 });
 
