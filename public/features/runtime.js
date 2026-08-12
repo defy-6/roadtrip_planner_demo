@@ -80,25 +80,32 @@ function selectedPointStyle(type, options = {}) {
 function mapLegendPointStyle(type) {
   return type === 'geography' ? 'background:#fff;border-color:#111827;box-shadow:0 0 0 1px #111827' : `background:${placeTypeColor(type)}`;
 }
-function calloutOffset(latLng, occupied = []) {
+function calloutPlacement(latLng, occupied = []) {
   const point = map?.latLngToContainerPoint(latLng);
-  if (!point) return { x: 0, y: 0 };
+  if (!point) return 'top';
   const nearby = occupied.filter(item => point.distanceTo(item.point) < 138);
-  const offsets = [{ x: 0, y: 0 }, { x: 62, y: -16 }, { x: -62, y: -16 }, { x: 42, y: -74 }, { x: -42, y: -74 }, { x: 0, y: -112 }];
-  const offset = offsets[Math.min(nearby.length, offsets.length - 1)];
-  occupied.push({ point, offset });
-  return offset;
+  const placements = ['top', 'right', 'left', 'bottom', 'top', 'right', 'left'];
+  const placement = placements[Math.min(nearby.length, placements.length - 1)];
+  occupied.push({ point, placement });
+  return placement;
 }
 function addSelectedPlacePhotoCallout(layer, latLng, place, fallbackPhoto = '', occupied = []) {
   const photo = place?.photo || fallbackPhoto;
   if (!photo) return;
-  const offset = calloutOffset(latLng, occupied);
-  const iconFor = portrait => L.divIcon({
+  const placement = calloutPlacement(latLng, occupied);
+  const iconFor = portrait => {
+    const width = portrait ? 84 : 112, height = portrait ? 112 : 84;
+    const anchors = {
+      top: [width / 2, height + 10], right: [-10, height / 2],
+      left: [width + 10, height / 2], bottom: [width / 2, -10]
+    };
+    return L.divIcon({
       className: 'selected-place-photo-marker',
       iconSize: portrait ? [88, 120] : [116, 88],
-      iconAnchor: portrait ? [44 - offset.x, 120 - offset.y] : [58 - offset.x, 88 - offset.y],
-      html: `<div class="map-place-photo-callout ${portrait ? 'is-portrait' : ''}" style="--place-color:${placeTypeColor(place?.type)};--callout-x:${offset.x}px;--callout-y:${offset.y}px"><img src="${escapeHtml(photo)}" alt="${escapeHtml(place?.name || '地点')}图片"></div>`
+      iconAnchor: anchors[placement],
+      html: `<div class="map-place-photo-callout is-${placement} ${portrait ? 'is-portrait' : ''}" style="--place-color:${placeTypeColor(place?.type)}"><img src="${escapeHtml(photo)}" alt="${escapeHtml(place?.name || '地点')}图片"></div>`
     });
+  };
   const marker = L.marker(latLng, {
     pane: 'photoCalloutPane',
     icon: iconFor(false),
@@ -435,7 +442,7 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.place-photo-preview{width:100%;height:120px;display:block;object-fit:cover;border-radius:7px;background:#edf1ed}.place-photo-action{display:inline-flex!important;justify-self:start;padding:4px 7px;border:1px solid #9dbaaa;border-radius:5px;color:#1d5b46;font:12px inherit;cursor:pointer}.place-photo-action input{display:none}.place-photo-placeholder{height:54px;display:grid;place-items:center;border:1px dashed #cdd9d0;border-radius:7px;color:#849188;font-size:11px}.place-photo-tools{display:flex;flex-wrap:wrap;gap:6px}.place-photo-tools button{margin:0}.place-photo-candidates{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:6px;border:1px solid #d9e5dc;border-radius:7px;background:#f7fbf8}.place-photo-candidates button{padding:0!important;overflow:hidden;border:2px solid transparent!important;background:#fff!important}.place-photo-candidates button:hover{border-color:#1d5b46!important}.place-photo-candidates img{display:block;width:100%;height:48px;object-fit:cover}.place-photo-candidates small{grid-column:1/-1;color:#607569;font-size:10px}.place-photo-source{color:#607569;font-size:10px}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.place-card .place-save{background:#1d5b46!important;color:#fff!important;border-color:#1d5b46!important}.place-card.dirty{border-color:#d49b45;background:#fffaf0}.place-card.dirty .place-save::after{content:" · 未保存";font-size:.85em}.place-card .place-name:focus{border-bottom-color:#1d5b46;box-shadow:0 1px 0 #1d5b46}' }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: '.flight-airport-marker{filter:drop-shadow(0 0 4px #f4d56a)}.flight-arrow-marker{background:transparent!important;border:0!important}.flight-arrow-marker span{display:block;width:16px;height:16px;color:#d4a72c;font-size:13px;line-height:16px;text-align:center;text-shadow:0 0 4px #fff,0 0 7px #f4d56a;transform:rotate(var(--flight-arrow-angle));transform-origin:center;font-weight:900}' }));
-document.head.append(Object.assign(document.createElement('style'), { textContent: '.selected-map-route{filter:drop-shadow(0 0 2px #fff) drop-shadow(0 2px 4px #173c3270)}.selected-map-point{filter:drop-shadow(0 0 3px #fff) drop-shadow(0 2px 5px #173c3290)}.selected-place-photo-marker{background:transparent!important;border:0!important;pointer-events:none}.selected-place-photo-marker .map-place-photo-callout{position:relative;box-sizing:border-box;width:112px;height:84px;padding:0;border:2px solid var(--place-color,#1d5b46);border-radius:8px;background:#fff;overflow:visible;box-shadow:0 3px 10px #173c3266}.selected-place-photo-marker .map-place-photo-callout.is-portrait{width:84px;height:112px}.selected-place-photo-marker .map-place-photo-callout::after{content:"";position:absolute;left:50%;bottom:-9px;width:12px;height:12px;background:#fff;border-right:2px solid var(--place-color,#1d5b46);border-bottom:2px solid var(--place-color,#1d5b46);transform:translateX(-50%) rotate(45deg);border-radius:0 0 2px 0}.selected-place-photo-marker img{display:block;width:100%;height:100%;object-fit:cover;object-position:center;border-radius:5px}.leaflet-photoCallout-pane{pointer-events:none}' }));
+document.head.append(Object.assign(document.createElement('style'), { textContent: '.selected-map-route{filter:drop-shadow(0 0 2px #fff) drop-shadow(0 2px 4px #173c3270)}.selected-map-point{filter:drop-shadow(0 0 3px #fff) drop-shadow(0 2px 5px #173c3290)}.selected-place-photo-marker{background:transparent!important;border:0!important;pointer-events:none}.selected-place-photo-marker .map-place-photo-callout{position:relative;box-sizing:border-box;width:112px;height:84px;padding:0;border:2px solid var(--place-color,#1d5b46);border-radius:8px;background:#fff;overflow:visible;box-shadow:0 3px 10px #173c3266}.selected-place-photo-marker .map-place-photo-callout.is-portrait{width:84px;height:112px}.selected-place-photo-marker .map-place-photo-callout::after{content:"";position:absolute;width:12px;height:12px;background:#fff;border-right:2px solid var(--place-color,#1d5b46);border-bottom:2px solid var(--place-color,#1d5b46);transform:rotate(45deg);border-radius:0 0 2px 0}.selected-place-photo-marker .is-top::after{left:50%;bottom:-9px;margin-left:-6px}.selected-place-photo-marker .is-bottom::after{left:50%;top:-9px;margin-left:-6px;transform:rotate(225deg)}.selected-place-photo-marker .is-right::after{left:-9px;top:50%;margin-top:-6px;transform:rotate(135deg)}.selected-place-photo-marker .is-left::after{right:-9px;top:50%;margin-top:-6px;transform:rotate(-45deg)}.selected-place-photo-marker img{display:block;width:100%;height:100%;object-fit:cover;object-position:center;border-radius:5px}.leaflet-photoCallout-pane{pointer-events:none}' }));
 const presetNodeTimes = {
   '2026-08-15|伊宁机场':['20:00','20:40'],'2026-08-15|伊宁市区住宿':['21:20','23:00'],'2026-08-16|赛里木湖东门':['11:15','20:40'],'2026-08-16|赛里木湖附近住宿':['20:40','23:00'],
   '2026-08-17|果子沟':['09:20','10:00'],'2026-08-17|六星街':['12:45','14:30'],'2026-08-17|那拉提镇住宿':['18:30','21:30'],'2026-08-18|那拉提空中草原':['08:30','12:30'],'2026-08-18|巴音布鲁克镇住宿':['15:30','22:00'],
