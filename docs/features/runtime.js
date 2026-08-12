@@ -71,7 +71,14 @@ function renderPlaceTypeFilter() {
 const mapDisplayTypeName = type => ({ transport: '交通', supply: '补给' }[mapDisplayType(type)] || placeTypeName(type));
 function mapPointStyle(type, options = {}) {
   const color = placeTypeColor(type);
+  if (type === 'geography') return { radius: 3.5, color: '#111827', weight: 1.5, fillColor: '#ffffff', fillOpacity: 1, ...options };
   return { radius: 3.5, color, weight: 1.3, fillColor: color, fillOpacity: .95, ...options };
+}
+function selectedPointStyle(type, options = {}) {
+  return mapPointStyle(type, { radius: 14, weight: 5, className: 'selected-map-point', ...options });
+}
+function mapLegendPointStyle(type) {
+  return type === 'geography' ? 'background:#fff;border-color:#111827;box-shadow:0 0 0 1px #111827' : `background:${placeTypeColor(type)}`;
 }
 const eventTypeNames = { spot: '游玩', food: '用餐', hotel: '入住 / 休息', drive: '路程', flight: '航班', transport: '交通 / 手续', service: '服务区停靠', fuel: '加油 / 采购', supply: '补给' };
 $('#editorType').append(new Option('路程', 'drive'));
@@ -601,7 +608,7 @@ async function showPlaceOnMap(placeId) {
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   setOverviewFocusOpacity(true);
   routeLayer = L.featureGroup().addTo(map);
-  L.circleMarker([lat, lng], { radius: 14, color: '#fff', weight: 5, fillColor: placeTypeColor(place.type), fillOpacity: 1, className: 'selected-map-point' }).addTo(routeLayer);
+  L.circleMarker([lat, lng], selectedPointStyle(place.type)).addTo(routeLayer);
   if (place.photo) {
     L.marker([lat, lng], {
       icon: L.divIcon({
@@ -1437,7 +1444,7 @@ function renderMapRouteLegend(date) {
   const driveEvents = activeDate ? dayDriveEvents(activeDate).map(({ event }) => event) : activeEvents.filter(event => event.type === 'drive');
   const driveCount = driveEvents.length;
   const routeLegend = driveEvents.map((event, index) => `<div><i class="route-legend-swatch" style="background:${routeColorForSegment(activeDate, index, false, driveCount)}"></i>${escapeHtml(event.start ? `${event.start} · ` : '')}${escapeHtml(event.title || `路程 ${index + 1}`)}</div>`).join('');
-  mapRouteLegend.innerHTML = `<b>${activeDate ? `${escapeHtml(activeDate)} 图例` : '地图图例'}</b>${routeLegend}${placeTypes.map(type => `<div><i style="background:${placeTypeColor(type)}"></i>${escapeHtml(mapDisplayTypeName(type))}</div>`).join('')}<small>路程颜色与地图对应；点位颜色按地点库类别显示。</small>`;
+  mapRouteLegend.innerHTML = `<b>${activeDate ? `${escapeHtml(activeDate)} 图例` : '地图图例'}</b>${routeLegend}${placeTypes.map(type => `<div><i style="${mapLegendPointStyle(type)}"></i>${escapeHtml(mapDisplayTypeName(type))}</div>`).join('')}<small>路程颜色与地图对应；地名为白底黑边，其余点位按地点库类别着色。</small>`;
   mapRouteLegend.hidden = !(driveCount || placeTypes.length);
 }
 async function showDayOverview(date) {
@@ -2060,7 +2067,7 @@ async function focusScheduleEvent(index, { skipDriveQuery = false } = {}) {
       if (routeLayer) map.removeLayer(routeLayer);
       routeLayer = L.layerGroup().addTo(map);
       const color = markerColors[entry.type] || markerColors.spot;
-      L.circleMarker([lat, lng], { radius: 14, color: '#fff', weight: 6, fillColor: color, fillOpacity: .95, interactive: false, className: 'selected-map-point' }).addTo(routeLayer);
+      L.circleMarker([lat, lng], selectedPointStyle(place.type, { interactive: false })).addTo(routeLayer);
       if (place.photo) {
         L.marker([lat, lng], {
           icon: L.divIcon({
