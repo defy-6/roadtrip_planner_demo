@@ -83,9 +83,17 @@ function selectedPointStyle(type, options = {}) {
 function mapLegendPointStyle(type) {
   return type === 'geography' ? 'background:#fff;border-color:#111827;box-shadow:0 0 0 1px #111827' : `background:${placeTypeColor(type)}`;
 }
-function calloutBox(point, placement, compact = false) {
+function photoCalloutScale(compact = false) {
+  const zoom = map?.getZoom?.() || 10;
+  if (zoom <= 6) return compact ? .48 : .62;
+  if (zoom <= 7) return compact ? .58 : .72;
+  if (zoom <= 8) return compact ? .7 : .82;
+  if (zoom <= 9) return compact ? .82 : .92;
+  return 1;
+}
+function calloutBox(point, placement, compact = false, scale = photoCalloutScale(compact)) {
   // 用竖图的最大框预留空间，横图落在同一安全范围内，避免图片加载后再发生压盖。
-  const width = compact ? 88 : 116, height = compact ? 92 : 120, gap = compact ? 8 : 10;
+  const width = (compact ? 88 : 116) * scale, height = (compact ? 92 : 120) * scale, gap = (compact ? 8 : 10) * scale;
   if (placement === 'bottom') return { left: point.x - width / 2, top: point.y + gap, right: point.x + width / 2, bottom: point.y + gap + height };
   if (placement === 'left') return { left: point.x - gap - width, top: point.y - height / 2, right: point.x - gap, bottom: point.y + height / 2 };
   if (placement === 'right') return { left: point.x + gap, top: point.y - height / 2, right: point.x + gap + width, bottom: point.y + height / 2 };
@@ -93,6 +101,11 @@ function calloutBox(point, placement, compact = false) {
 }
 function boxesOverlap(first, second, padding = 8) {
   return first.left - padding < second.right && first.right + padding > second.left && first.top - padding < second.bottom && first.bottom + padding > second.top;
+}
+function overlapArea(first, second, padding = 8) {
+  const width = Math.max(0, Math.min(first.right + padding, second.right + padding) - Math.max(first.left - padding, second.left - padding));
+  const height = Math.max(0, Math.min(first.bottom + padding, second.bottom + padding) - Math.max(first.top - padding, second.top - padding));
+  return width * height;
 }
 function segmentTouchesBox(first, second, box) {
   const samples = 8;
@@ -104,13 +117,13 @@ function segmentTouchesBox(first, second, box) {
   }
   return false;
 }
-function calloutPlacement(latLng, occupied = [], routeLatLngs = [], compact = false) {
+function calloutPlacement(latLng, occupied = [], routeLatLngs = [], compact = false, scale = photoCalloutScale(compact)) {
   const point = map?.latLngToContainerPoint(latLng);
   if (!point) return 'top';
   const routePoints = routeLatLngs.map(routePoint => map.latLngToContainerPoint(routePoint));
   const candidates = ['top', 'right', 'left', 'bottom'];
   const placement = candidates.map((candidate, index) => {
-    const box = calloutBox(point, candidate, compact);
+    const box = calloutBox(point, candidate, compact, scale);
     const routeHits = routePoints.slice(1).reduce((count, routePoint, routeIndex) => count + Number(segmentTouchesBox(routePoints[routeIndex], routePoint, box)), 0);
     const imageHits = occupied.reduce((count, item) => count + Number(boxesOverlap(box, item.box)), 0);
     // 先保证图片卡片彼此不重叠；在此基础上才尽量避开路线。
@@ -119,22 +132,44 @@ function calloutPlacement(latLng, occupied = [], routeLatLngs = [], compact = fa
   occupied.push({ point, box: placement.box, placement: placement.candidate });
   return placement.candidate;
 }
-function addSelectedPlacePhotoCallout(layer, latLng, place, fallbackPhoto = '', occupied = [], routeLatLngs = [], compact = false) {
+function layoutPhotoCallouts(entries, routeLatLngs = [], compact = false, scale = photoCalloutScale(compact)) {
+  const routePoints = routeLatLngs.map(routePoint => map?.latLngToContainerPoint(routePoint)).filter(Boolean);
+  const candidates = ['top', 'right', 'left', 'bottom'];
+  const prepared = entries.map(entry => ({ ...entry, point: map?.latLngToContainerPoint(entry.latLng) })).filter(entry => entry.point);
+  // 用有限宽度的全局搜索代替“先到先放”：能同时看到所有图片，左右分开等组合不会被早期决策锁死。
+  let states = [{ score: 0, placed: [] }];
+  prepared.forEach((entry, entryIndex) => {
+    const choices = candidates.map((placement, placementIndex) => {
+      const box = calloutBox(entry.point, placement, compact, scale);
+      const routeHits = routePoints.slice(1).reduce((count, routePoint, routeIndex) => count + Number(segmentTouchesBox(routePoints[routeIndex], routePoint, box)), 0);
+      return { entry, entryIndex, placement, placementIndex, box, routeHits };
+    });
+    const next = [];
+    states.forEach(stateEntry => choices.forEach(choice => {
+      const overlap = stateEntry.placed.reduce((sum, item) => sum + overlapArea(choice.box, item.box), 0);
+      // 图片相交远比压到线路更严重，最后才以“上右左下”作为稳定的可复现决胜规则。
+      next.push({ score: stateEntry.score + overlap * 1000 + choice.routeHits * 80 + choice.placementIndex, placed: [...stateEntry.placed, choice] });
+    }));
+    states = next.sort((first, second) => first.score - second.score).slice(0, 320);
+  });
+  return new Map((states[0]?.placed || []).map(choice => [choice.entry.key, choice.placement]));
+}
+function addSelectedPlacePhotoCallout(layer, latLng, place, fallbackPhoto = '', occupied = [], routeLatLngs = [], compact = false, placementOverride = '', scale = photoCalloutScale(compact)) {
   const photo = place?.photo || fallbackPhoto;
   if (!photo) return;
-  const placement = calloutPlacement(latLng, occupied, routeLatLngs, compact);
+  const placement = placementOverride || calloutPlacement(latLng, occupied, routeLatLngs, compact, scale);
   const iconFor = portrait => {
-    const width = portrait ? (compact ? 64 : 84) : (compact ? 84 : 112);
-    const height = portrait ? (compact ? 84 : 112) : (compact ? 63 : 84);
+    const width = (portrait ? (compact ? 64 : 84) : (compact ? 84 : 112)) * scale;
+    const height = (portrait ? (compact ? 84 : 112) : (compact ? 63 : 84)) * scale;
     const anchors = {
       top: [width / 2, height + 10], right: [-10, height / 2],
       left: [width + 10, height / 2], bottom: [width / 2, -10]
     };
     return L.divIcon({
       className: 'selected-place-photo-marker',
-      iconSize: [width + 4, height + 4],
+      iconSize: [width + 4 * scale, height + 4 * scale],
       iconAnchor: anchors[placement],
-      html: `<div class="map-place-photo-callout is-${placement} ${portrait ? 'is-portrait' : ''} ${compact ? 'is-compact' : ''}" style="--place-color:${placeTypeColor(place?.type)}"><img src="${escapeHtml(photo)}" alt="${escapeHtml(place?.name || '地点')}图片"></div>`
+      html: `<div class="map-place-photo-callout is-${placement} ${portrait ? 'is-portrait' : ''} ${compact ? 'is-compact' : ''}" style="--place-color:${placeTypeColor(place?.type)};width:${width}px;height:${height}px"><img src="${escapeHtml(photo)}" alt="${escapeHtml(place?.name || '地点')}图片"></div>`
     });
   };
   const marker = L.marker(latLng, {
@@ -1682,14 +1717,17 @@ async function showDayOverview(date) {
     const photoCalloutOccupied = [];
     const renderedPhotoCallouts = new Set();
     const dayRouteLatLngs = routeRenderRecords.flatMap(record => record.latLngs);
-    places.forEach(place => {
-      const location = resolved.get(place.id); if (!location || !place.photo) return;
+    const photoScale = photoCalloutScale(true);
+    const photoEntries = places.flatMap(place => {
+      const location = resolved.get(place.id); if (!location || !place.photo) return [];
       const [lng, lat] = mapCoords(...location.split(',').map(Number));
       const calloutKey = place.id || `${lat.toFixed(6)},${lng.toFixed(6)}`;
-      if (renderedPhotoCallouts.has(calloutKey)) return;
+      if (renderedPhotoCallouts.has(calloutKey)) return [];
       renderedPhotoCallouts.add(calloutKey);
-      addSelectedPlacePhotoCallout(dayPhotoCalloutLayer, [lat, lng], place, '', photoCalloutOccupied, dayRouteLatLngs, true);
+      return [{ key: calloutKey, place, latLng: [lat, lng] }];
     });
+    const placements = layoutPhotoCallouts(photoEntries, dayRouteLatLngs, true, photoScale);
+    photoEntries.forEach(entry => addSelectedPlacePhotoCallout(dayPhotoCalloutLayer, entry.latLng, entry.place, '', photoCalloutOccupied, dayRouteLatLngs, true, placements.get(entry.key), photoScale));
   };
   dayPhotoCalloutRenderer = date ? renderDayPhotoCallouts : null;
   if (routeCacheChanged) save();
