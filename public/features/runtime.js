@@ -80,19 +80,46 @@ function selectedPointStyle(type, options = {}) {
 function mapLegendPointStyle(type) {
   return type === 'geography' ? 'background:#fff;border-color:#111827;box-shadow:0 0 0 1px #111827' : `background:${placeTypeColor(type)}`;
 }
-function calloutPlacement(latLng, occupied = []) {
+function calloutBox(point, placement) {
+  // 用竖图的最大框预留空间，横图落在同一安全范围内，避免图片加载后再发生压盖。
+  const width = 116, height = 120, gap = 10;
+  if (placement === 'bottom') return { left: point.x - width / 2, top: point.y + gap, right: point.x + width / 2, bottom: point.y + gap + height };
+  if (placement === 'left') return { left: point.x - gap - width, top: point.y - height / 2, right: point.x - gap, bottom: point.y + height / 2 };
+  if (placement === 'right') return { left: point.x + gap, top: point.y - height / 2, right: point.x + gap + width, bottom: point.y + height / 2 };
+  return { left: point.x - width / 2, top: point.y - gap - height, right: point.x + width / 2, bottom: point.y - gap };
+}
+function boxesOverlap(first, second, padding = 8) {
+  return first.left - padding < second.right && first.right + padding > second.left && first.top - padding < second.bottom && first.bottom + padding > second.top;
+}
+function segmentTouchesBox(first, second, box) {
+  const samples = 8;
+  for (let index = 0; index <= samples; index += 1) {
+    const ratio = index / samples;
+    const x = first.x + (second.x - first.x) * ratio;
+    const y = first.y + (second.y - first.y) * ratio;
+    if (x >= box.left - 5 && x <= box.right + 5 && y >= box.top - 5 && y <= box.bottom + 5) return true;
+  }
+  return false;
+}
+function calloutPlacement(latLng, occupied = [], routeLatLngs = []) {
   const point = map?.latLngToContainerPoint(latLng);
   if (!point) return 'top';
-  const nearby = occupied.filter(item => point.distanceTo(item.point) < 138);
-  const placements = ['top', 'right', 'left', 'bottom', 'top', 'right', 'left'];
-  const placement = placements[Math.min(nearby.length, placements.length - 1)];
-  occupied.push({ point, placement });
-  return placement;
+  const routePoints = routeLatLngs.map(routePoint => map.latLngToContainerPoint(routePoint));
+  const candidates = ['top', 'right', 'left', 'bottom'];
+  const placement = candidates.map((candidate, index) => {
+    const box = calloutBox(point, candidate);
+    const routeHits = routePoints.slice(1).reduce((count, routePoint, routeIndex) => count + Number(segmentTouchesBox(routePoints[routeIndex], routePoint, box)), 0);
+    const imageHits = occupied.reduce((count, item) => count + Number(boxesOverlap(box, item.box)), 0);
+    // 先保证图片卡片彼此不重叠；在此基础上才尽量避开路线。
+    return { candidate, box, score: imageHits * 10000 + routeHits * 100 + index };
+  }).sort((first, second) => first.score - second.score)[0];
+  occupied.push({ point, box: placement.box, placement: placement.candidate });
+  return placement.candidate;
 }
-function addSelectedPlacePhotoCallout(layer, latLng, place, fallbackPhoto = '', occupied = []) {
+function addSelectedPlacePhotoCallout(layer, latLng, place, fallbackPhoto = '', occupied = [], routeLatLngs = []) {
   const photo = place?.photo || fallbackPhoto;
   if (!photo) return;
-  const placement = calloutPlacement(latLng, occupied);
+  const placement = calloutPlacement(latLng, occupied, routeLatLngs);
   const iconFor = portrait => {
     const width = portrait ? 84 : 112, height = portrait ? 112 : 84;
     const anchors = {
@@ -702,7 +729,7 @@ function showRouteOnMap(path, locations, nodes, routeInfo = {}) {
     const calloutKey = place.id || `${lat.toFixed(6)},${lng.toFixed(6)}`;
     if (!renderedPhotoCallouts.has(calloutKey)) {
       renderedPhotoCallouts.add(calloutKey);
-      addSelectedPlacePhotoCallout(routeLayer, [lat, lng], place, '', photoCalloutOccupied);
+      addSelectedPlacePhotoCallout(routeLayer, [lat, lng], place, '', photoCalloutOccupied, latLngs);
     }
   });
   setOverviewFocusOpacity(true);
