@@ -155,7 +155,7 @@ priceFields.addEventListener('input', updateEditorPriceTotal);
 priceFields.onclick = event => { const add = event.target.closest('[data-add-price]'); if (add) { addEditorPriceLine(add.dataset.addPrice); updateEditorPriceTotal(); } const remove = event.target.closest('[data-remove-price]'); if (remove) { remove.closest('.editor-price-line')?.remove(); updateEditorPriceTotal(); } };
 const locationsPanel = document.createElement('section');
 locationsPanel.className = 'locations-panel';
-locationsPanel.innerHTML = '<div class="aside-head"><h3>通用地点库 <small id="placeCount"></small></h3><button type="button" id="addPlaceBtn">+ 地点</button></div><p class="hint">地点跨计划通用；自定义地点类别仅保存于当前计划。</p><div class="location-toolbar"><input id="placeSearch" type="search" placeholder="搜索名称、地址或备注"><select id="placeTypeFilter" aria-label="按地点类型筛选"></select><button type="button" id="togglePlaceSelection">选择地点</button><button type="button" id="selectAllPlaces">全选结果</button><button type="button" id="resolveSelectedPlaces">批量查询位置</button><button type="button" id="fetchSelectedPhotos">批量获取图片</button><button type="button" class="danger" id="deleteSelectedPlaces">批量删除</button></div><details class="batch-add"><summary>批量新增地点</summary><textarea id="batchPlaceInput" placeholder="每行：类型｜名称｜地址\n例如：地名｜伊宁市｜新疆伊犁州伊宁市"></textarea><div class="batch-actions"><button type="button" id="batchAddPlaces">导入这些地点</button><small>景点、地名、饮食、住宿、机场、服务区、加油站、补给</small></div></details><div id="places" class="places"></div>';
+locationsPanel.innerHTML = '<div class="aside-head"><h3>当前计划地点库 <small id="placeCount"></small></h3><button type="button" id="addPlaceBtn">+ 地点</button></div><p class="hint">仅显示当前计划已加入的地点；新建或更新会同步写入通用地点库，供其他计划直接复用缓存。</p><div class="location-toolbar"><input id="placeSearch" type="search" placeholder="搜索名称、地址或备注"><select id="placeTypeFilter" aria-label="按地点类型筛选"></select><button type="button" id="togglePlaceSelection">选择地点</button><button type="button" id="selectAllPlaces">全选结果</button><button type="button" id="resolveSelectedPlaces">批量查询位置</button><button type="button" id="fetchSelectedPhotos">批量获取图片</button><button type="button" class="danger" id="deleteSelectedPlaces">批量删除</button></div><details class="batch-add"><summary>批量新增地点</summary><textarea id="batchPlaceInput" placeholder="每行：类型｜名称｜地址\n例如：地名｜伊宁市｜新疆伊犁州伊宁市"></textarea><div class="batch-actions"><button type="button" id="batchAddPlaces">导入这些地点</button><small>景点、地名、饮食、住宿、机场、服务区、加油站、补给</small></div></details><div id="places" class="places"></div>';
 document.querySelector('.content').insertAdjacentElement('afterend', locationsPanel);
 const schedulePanel = document.querySelector('.schedule-panel');
 const mapWorkspace = document.querySelector('.content');
@@ -215,8 +215,13 @@ scheduleExportPreview.innerHTML = '<section><div class="aside-head"><h3>时间�
 document.body.append(scheduleExportPreview);
 let pendingScheduleExportCanvas;
 const locationActions = document.createElement('div'); locationActions.className = 'location-head-actions';
+const universalPlaceButton = document.createElement('button'); universalPlaceButton.type = 'button'; universalPlaceButton.id = 'universalPlaceBtn'; universalPlaceButton.className = 'ghost'; universalPlaceButton.textContent = '通用库';
 const addPlaceCategoryButton = document.createElement('button'); addPlaceCategoryButton.type = 'button'; addPlaceCategoryButton.id = 'addPlaceCategoryBtn'; addPlaceCategoryButton.className = 'ghost'; addPlaceCategoryButton.textContent = '+ 类别';
-const addPlaceButton = $('#addPlaceBtn'); addPlaceButton.before(locationActions); locationActions.append(addPlaceCategoryButton, addPlaceButton, createExpandButton(locationsPanel, '地点库'));
+const addPlaceButton = $('#addPlaceBtn'); addPlaceButton.before(locationActions); locationActions.append(universalPlaceButton, addPlaceCategoryButton, addPlaceButton, createExpandButton(locationsPanel, '地点库'));
+const universalPlaceDialog = document.createElement('dialog');
+universalPlaceDialog.className = 'event-editor';
+universalPlaceDialog.innerHTML = '<section class="editor-form"><h3>通用地点库</h3><p class="hint">点击地点即可复制到当前计划；会保留已缓存的位置、图片与 POI 详情，不调用高德。</p><input id="universalPlaceSearch" type="search" placeholder="搜索通用地点"><div id="universalPlaceList" class="places"></div><div class="editor-actions"><button type="button" id="closeUniversalPlaceDialog" class="ghost">关闭</button></div></section>';
+document.body.append(universalPlaceDialog);
 const placeEditor = document.createElement('dialog');
 placeEditor.id = 'placeEditor'; placeEditor.className = 'event-editor';
 placeEditor.innerHTML = '<form id="placeEditorForm" class="editor-form" method="dialog"><h3>新增地点</h3><label>地点类型<select id="newPlaceType"></select></label><label>地点名称<input id="newPlaceName" required placeholder="例如：赛里木湖东门"></label><label>详细地址<input id="newPlaceAddress" placeholder="地址未确定可留空"></label><div class="new-place-query"><button type="button" id="queryNewPlaceLocation">查询高德位置</button><button type="button" id="queryNewPlacePhotos">查询高德图片</button><button type="button" id="queryNewPlaceDetails">获取 POI 详情</button><small id="newPlaceAmapStatus">填写名称和完整地址后可分别查询；保存不会自动调用高德。</small></div><p id="newPlaceResolvedCoords" class="resolved-place" hidden></p><div id="newPlaceCurrentPhoto" class="place-editor-current-photo" hidden><img id="newPlaceCurrentPhotoImage" alt="当前地点图片"><small>当前地点图片；查询高德图片后可选择替换。</small></div><div id="newPlacePhotoCandidates" class="new-place-photo-candidates" hidden></div><label>地点图片（可选）<input id="newPlacePhoto" type="file" accept="image/*"></label><fieldset class="place-detail-fields"><legend>POI 详情（可人工修改）</legend><label>简介<textarea id="newPlaceIntro" rows="2" placeholder="高德未提供可留空"></textarea></label><div class="editor-grid"><label>营业时间<input id="newPlaceOpenTime" placeholder="高德未提供可留空"></label><label>评分<input id="newPlaceRating" placeholder="例如：4.6"></label><label>参考费用<input id="newPlaceReferenceCost" placeholder="例如：¥120/人"></label><label>门票<input id="newPlaceTicketPrice" placeholder="高德未提供可留空"></label></div><label>标签<input id="newPlaceTags" placeholder="例如：湖泊、观景、亲子"></label><label>人工备注<textarea id="newPlaceNote" rows="3" placeholder="预约、实际门票、营业时间调整等"></textarea></label></fieldset><div class="editor-actions"><button type="button" id="placeEditorDelete" class="danger" hidden>删除地点</button><button type="button" id="placeEditorCancel" class="ghost">取消</button><button type="submit">保存地点</button></div></form>';
@@ -314,6 +319,8 @@ function refreshPlaceQueryLabels({ hasPhoto = false, hasDetails = false } = {}) 
 }
 function fileToDataUrl(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); }); }
 function confirmNewPlace(initial = {}) {
+  const cached = findMatchingLocation(state.universalLocations, initial.address, initial.name);
+  if (cached) return Promise.resolve(importUniversalPlace(cached));
   $('#placeEditorForm').reset();
   editingPlaceId = null;
   $('#placeEditorDelete').hidden = true;
@@ -422,6 +429,26 @@ function findMatchingLocation(locations, address, name = '', resolvedLocation = 
     if (addressKey && keys.includes(addressKey)) return true;
     return nameKey && normalizePlaceLookup(place.name) === nameKey && (!addressKey || keys.includes(addressKey));
   });
+}
+function clonePlaceForPlan(place) { return structuredClone({ ...place, id: crypto.randomUUID() }); }
+function syncPlaceToUniversal(place) {
+  if (!place) return place;
+  state.universalLocations ||= [];
+  const existing = findMatchingLocation(state.universalLocations, place.address, place.name, place.resolved?.location);
+  if (existing) Object.assign(existing, structuredClone({ ...place, id: existing.id }));
+  else state.universalLocations.push(structuredClone({ ...place }));
+  return place;
+}
+function importUniversalPlace(place) {
+  if (!place) return null;
+  const existing = findMatchingLocation(state.locations, place.address, place.name, place.resolved?.location);
+  if (existing) return existing;
+  const copy = clonePlaceForPlan(place);
+  state.locations.push(copy);
+  return copy;
+}
+function findPlaceInPlanOrUniversal(address, name = '', resolvedLocation = '') {
+  return findMatchingLocation(state.locations, address, name, resolvedLocation) || importUniversalPlace(findMatchingLocation(state.universalLocations, address, name, resolvedLocation));
 }
 function repairEventNamedLocations(data) {
   const locations = data.locations || [], schedule = data.schedule || [];
@@ -857,8 +884,10 @@ function parseInlineWaypoints(text) {
   });
 }
 async function resolveInlinePlace(name, address, type = 'spot') {
+  let place = findPlaceInPlanOrUniversal(address, name);
+  if (place) return place;
   const point = await geocode(address, name);
-  let place = state.locations.find(item => item.name === name && item.address === address);
+  place = findPlaceInPlanOrUniversal(address, name, point.location);
   if (!place) place = await confirmNewPlace({ type, name, address, fromEvent: true });
   if (!place) return null;
   Object.assign(place, { type, name, address, resolved: { name: point.name || name, address: point.formatted_address || address, location: point.location } });
@@ -1004,6 +1033,21 @@ function renderLocations() {
     $('.place-map', card).onclick = async () => { const place = state.locations.find(item => item.id === card.dataset.placeId); if (!place?.address) { alert('这个地点尚未填写具体地址。'); return; } try { const point = place.resolved?.location ? place.resolved : (isShareMode ? null : await geocode(place.address, place.name)); if (!point?.location) { alert('共享版本中尚未保存该地点坐标。'); return; } const [lng, lat] = mapCoords(...point.location.split(',').map(Number)); map.flyTo([lat, lng], 11, { duration: .7 }); L.popup().setLatLng([lat, lng]).setContent(`<b>${escapeHtml(place.name)}</b><br>${escapeHtml(place.address)}`).openOn(map); } catch { alert('暂时无法定位这个地点。'); } };
   });
 }
+function renderUniversalPlaces() {
+  const container = $('#universalPlaceList'); if (!container) return;
+  const query = $('#universalPlaceSearch')?.value.trim().toLowerCase() || '';
+  const matches = (state.universalLocations || []).filter(place => !query || `${place.name || ''} ${place.address || ''} ${place.note || ''}`.toLowerCase().includes(query));
+  container.innerHTML = matches.length ? matches.map(place => `<article class="place-card place-card-summary ${place.photo ? 'has-photo' : 'no-photo'}" data-universal-place-id="${place.id}" tabindex="0" role="button"><div class="place-card-summary-title"><span class="place-type type-${escapeHtml(place.type || 'spot')}" style="background:${placeTypeColor(place.type)}22;color:${placeTypeColor(place.type)}">${escapeHtml(placeTypeName(place.type))}</span><b>${escapeHtml(place.name || '未命名地点')}</b></div>${place.photo ? `<img class="place-photo-preview" src="${escapeHtml(place.photo)}" alt="${escapeHtml(place.name || '地点')}图片">` : ''}<small>${escapeHtml(place.address || '地址待定')}</small></article>`).join('') : '<p class="hint">没有匹配的通用地点。</p>';
+  container.querySelectorAll('[data-universal-place-id]').forEach(card => card.onclick = () => {
+    const source = state.universalLocations.find(place => place.id === card.dataset.universalPlaceId);
+    const imported = importUniversalPlace(source); if (!imported) return;
+    save(); renderLocations(); universalPlaceDialog.close();
+    $('#fileSaveStatus').textContent = `已从通用地点库加入“${imported.name || '地点'}”（已复用本地缓存）`;
+  });
+}
+universalPlaceButton.onclick = () => { renderUniversalPlaces(); universalPlaceDialog.showModal(); };
+$('#closeUniversalPlaceDialog').onclick = () => universalPlaceDialog.close();
+$('#universalPlaceSearch').oninput = renderUniversalPlaces;
 function refreshEventCards() { state.schedule.forEach((event, index) => updateNodeFromSchedule(index)); }
 function removeLocations(ids) {
   state.locations = state.locations.filter(place => !ids.has(place.id));
@@ -1061,7 +1105,7 @@ function queueLocalFileSave() {
       activeVersion: state.versionKey,
       plans: state.plans,
       versions: Object.fromEntries(state.plans.map(plan => [plan.id, parseStoredJson(versionStorageKey(plan.id), null)]).filter(([, snapshot]) => snapshot)),
-      locations: state.locations,
+      locations: state.universalLocations,
       routes: state.routes,
       sharedSchedule: {},
       updatedAt: new Date().toISOString()
@@ -1077,7 +1121,8 @@ function queueLocalFileSave() {
 function currentSnapshot() { return { name: $('#tripName').value, items: [...itemsEl.children].map(values), schedule: state.schedule, locations: state.locations, routes: state.routes, placeCategories: state.placeCategories, preferences: state.preferences, placeModelVersion: 1, routeLinkModeVersion: 1, planKey: state.versionKey, updatedAt: new Date().toISOString() }; }
 function save(){
   if (isShareMode) return;
-  writeSharedSchedule(); const snapshot = currentSnapshot(); localStorage.setItem(universalLocationStorageKey, JSON.stringify(state.locations)); localStorage.setItem(universalRouteStorageKey, JSON.stringify(state.routes)); localStorage.setItem('roadtrip', JSON.stringify(snapshot)); localStorage.setItem(versionStorageKey(state.versionKey), JSON.stringify(snapshot)); queueLocalFileSave();
+  (state.locations || []).forEach(syncPlaceToUniversal);
+  writeSharedSchedule(); const snapshot = currentSnapshot(); localStorage.setItem(universalLocationStorageKey, JSON.stringify(state.universalLocations)); localStorage.setItem(universalRouteStorageKey, JSON.stringify(state.routes)); localStorage.setItem('roadtrip', JSON.stringify(snapshot)); localStorage.setItem(versionStorageKey(state.versionKey), JSON.stringify(snapshot)); queueLocalFileSave();
 }
 function typeForTitle(title = '') { return /航班|\b[A-Z]{2}\d{3,4}\b/i.test(title) ? 'flight' : /午餐|晚餐|早餐|简餐/.test(title) ? 'food' : /入住|休息|候机/.test(title) ? 'hotel' : /抵达|下机|取行李|租车|验车|还车|起飞/.test(title) ? 'transport' : /加油/.test(title) ? 'fuel' : /服务区/.test(title) ? 'service' : /驾驶|前往|返回|继续|返程|至/.test(title) ? 'drive' : 'spot'; }
 function migrateToUnifiedItems(data) {
@@ -1120,33 +1165,13 @@ function mergeUniversalLocations(data) {
   try { universal = JSON.parse(localStorage.getItem(universalLocationStorageKey) || '[]'); } catch { universal = []; }
   if (!Array.isArray(universal)) universal = [];
   const merged = universal.map(place => ({ ...place }));
-  const idMap = new Map();
-  const keyFor = place => `${(place.name || '').trim().toLowerCase()}|${(place.address || '').trim().toLowerCase()}`;
   (data.locations || []).forEach(place => {
-    const key = keyFor(place);
-    let existing = merged.find(item => item.id === place.id) || (key !== '|' ? merged.find(item => keyFor(item) === key) : null);
-    if (!existing) { existing = { ...place }; merged.push(existing); }
-    else {
-      if (!existing.name && place.name) existing.name = place.name;
-      if (!existing.address && place.address) existing.address = place.address;
-      if (!existing.note && place.note) existing.note = place.note;
-      if (!existing.resolved && place.resolved) existing.resolved = place.resolved;
-    }
-    idMap.set(place.id, existing.id);
+    const existing = findMatchingLocation(merged, place.address, place.name, place.resolved?.location);
+    if (existing) Object.assign(existing, { ...structuredClone(place), id: existing.id });
+    else merged.push(structuredClone(place));
   });
-  const schedule = (data.schedule || []).map(event => {
-    const next = { ...event };
-    if (next.locationId && idMap.has(next.locationId)) next.locationId = idMap.get(next.locationId);
-    if (next.routeLinks) next.routeLinks = {
-      ...next.routeLinks,
-      originPlaceId: idMap.get(next.routeLinks.originPlaceId) || next.routeLinks.originPlaceId,
-      destinationPlaceId: idMap.get(next.routeLinks.destinationPlaceId) || next.routeLinks.destinationPlaceId,
-      viaPlaceIds: (next.routeLinks.viaPlaceIds || []).map(id => idMap.get(id) || id)
-    };
-    return next;
-  });
-  const routes = (data.routes || []).map(route => ({ ...route, originPlaceId: idMap.get(route.originPlaceId) || route.originPlaceId, destinationPlaceId: idMap.get(route.destinationPlaceId) || route.destinationPlaceId, viaPlaceIds: (route.viaPlaceIds || []).map(id => idMap.get(id) || id) }));
-  return { ...data, schedule, routes, locations: merged };
+  // 计划内地点保留自己的 id；通用库只作为可导入的缓存，不重写事件关联。
+  return { ...data, locations: data.locations || [], universalLocations: merged };
 }
 const driveTravelModes = DRIVE_TRAVEL_MODES;
 const transportModes = TRANSPORT_MODES;
@@ -1572,7 +1597,7 @@ function load(rawData, versionKey = rawData.planKey || defaultPlanId) {
     if (normalized.type === 'drive') delete normalized.locationId;
     return normalized;
   }));
-  state.locations = data.locations || []; state.routes = data.routes || []; state.placeCategories = (data.placeCategories || []).filter(category => category?.id && category?.name).map(category => ({ id: category.id, name: category.name, color: normalizeCategoryColor(category.color) }));
+  state.locations = data.locations || []; state.universalLocations = data.universalLocations || data.locations || []; state.routes = data.routes || []; state.placeCategories = (data.placeCategories || []).filter(category => category?.id && category?.name).map(category => ({ id: category.id, name: category.name, color: normalizeCategoryColor(category.color) }));
   state.schedule.forEach(event => {
     const links = event.routeLinks;
     if (event.type !== 'drive' || !links) return;
@@ -2333,10 +2358,10 @@ $('#resolveEditorPlace').onclick = async event => {
   const button = event.currentTarget; button.disabled = true; button.textContent = '正在查询高德位置…';
   try {
     let place = state.locations.find(item => item.id === $('#eventLocation').value);
-    if (!place) place = findMatchingLocation(state.locations, address, name);
+    if (!place) place = findPlaceInPlanOrUniversal(address, name);
     if (!place) {
       const point = await geocode(address, name);
-      place = findMatchingLocation(state.locations, address, name, point.location);
+      place = findPlaceInPlanOrUniversal(address, name, point.location);
       if (!place) place = await confirmNewPlace({ type: $('#editorType').value, name: suggestedPlaceName(address, point.name, name), address, note: $('#editorNote').value.trim(), fromEvent: true });
       if (!place) { button.textContent = '查询高德位置并关联'; return; }
     } else if (place.address !== address || !place.resolved) {
@@ -2398,12 +2423,12 @@ $('#editorForm').onsubmit = async event => {
   if (type !== 'drive' && type !== 'flight' && address) {
     let place = state.locations.find(item => item.id === locationId);
     if (!place) {
-      place = findMatchingLocation(state.locations, address, title);
+      place = findPlaceInPlanOrUniversal(address, title);
       if (!place) {
         let point;
         try { point = await geocode(address, title); }
         catch (error) { alert(error.message || '高德暂时无法确认该地点，请检查地址后重试。'); return; }
-        place = findMatchingLocation(state.locations, address, title, point.location);
+        place = findPlaceInPlanOrUniversal(address, title, point.location);
         if (!place) place = await confirmNewPlace({ type, name: suggestedPlaceName(address, point.name, title || address), address, note: $('#editorNote').value.trim(), fromEvent: true });
         if (!place) return;
       }
@@ -2710,7 +2735,7 @@ $('#planForm', planDialog).onsubmit = event => {
     const id = planIdFromName(name);
     const snapshot = planDialogMode === 'copy'
       ? { ...structuredClone(currentSnapshot()), name, planKey: id, updatedAt: new Date().toISOString() }
-      : { name, items: [], schedule: [], locations: structuredClone(state.locations), routes: structuredClone(state.routes), placeCategories: [], preferences: structuredClone(state.preferences), placeModelVersion: 1, routeLinkModeVersion: 1, planKey: id };
+      : { name, items: [], schedule: [], locations: [], routes: [], placeCategories: [], preferences: structuredClone(state.preferences), placeModelVersion: 1, routeLinkModeVersion: 1, planKey: id };
     state.plans.push({ id, name }); state.versionKey = id; localStorage.setItem(versionStorageKey(id), JSON.stringify(snapshot)); renderPlanSelect(); load(snapshot, id);
     snapshot.schedule.length ? renderSchedule(state.schedule) : renderManualSchedule();
   }
