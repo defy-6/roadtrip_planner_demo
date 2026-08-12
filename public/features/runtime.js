@@ -27,6 +27,9 @@ let map;
 let routeLayer;
 let markerLayer;
 let dayOverviewLayer;
+let dayPhotoCalloutLayer;
+let dayPhotoCalloutRenderer = null;
+let dayPhotoCalloutLayoutTimer = null;
 let dayOverviewRequestId = 0;
 let dayOverviewBounds;
 let mapFocusDate = '';
@@ -597,6 +600,7 @@ async function initMap() {
   L.control.layers({ '高德道路': amapRoad, '高德卫星影像（地形 + 道路）': amapTerrain }, null, { position: 'topright', collapsed: false }).addTo(map);
   markerLayer = L.layerGroup().addTo(map);
   dayOverviewLayer = L.layerGroup().addTo(map);
+  dayPhotoCalloutLayer = L.layerGroup().addTo(map);
   map.on('click', event => {
     const target = event.originalEvent?.target;
     if (target?.closest?.('.leaflet-interactive,.leaflet-marker-icon,.leaflet-popup,.leaflet-control')) return;
@@ -604,6 +608,12 @@ async function initMap() {
   });
   // 低缩放时用更细的线保留相近道路的真实差异，不改变路线几何。
   map.on('zoomend', refreshOverviewRouteWeights);
+  // 图片气泡以屏幕坐标避让，缩放/平移后必须重新选上下左右方向。
+  map.on('moveend zoomend', () => {
+    if (!dayPhotoCalloutRenderer) return;
+    clearTimeout(dayPhotoCalloutLayoutTimer);
+    dayPhotoCalloutLayoutTimer = setTimeout(() => dayPhotoCalloutRenderer?.(), 0);
+  });
   document.querySelector('#map').classList.add('map-ready');
   document.head.append(Object.assign(document.createElement('style'), { textContent: '#map.map-ready:before,#map.map-ready:after{display:none}' }));
   $('.map-empty')?.remove();
@@ -1521,7 +1531,8 @@ async function showDayOverview(date) {
   if (!isShareMode) await ensureFlightAirportLinks();
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   map.closePopup();
-  dayOverviewLayer.clearLayers(); markerLayer.clearLayers();
+  dayOverviewLayer.clearLayers(); markerLayer.clearLayers(); dayPhotoCalloutLayer?.clearLayers();
+  dayPhotoCalloutRenderer = null;
   setOverviewFocusOpacity(false);
   dayOverviewBounds = null;
   const events = state.schedule.map((event, index) => ({ ...event, scheduleIndex: index })).filter(event => !date || event.date === date);
@@ -1665,10 +1676,9 @@ async function showDayOverview(date) {
     displayedRouteCount += 1;
   });
   // 图片气泡必须在 fitBounds 完成后再按屏幕坐标避让；否则缩放会让原本不相交的气泡重新重叠。
-  let photosRendered = false;
   const renderDayPhotoCallouts = () => {
-    if (photosRendered || requestId !== dayOverviewRequestId || !date) return;
-    photosRendered = true;
+    if (requestId !== dayOverviewRequestId || !date || !dayPhotoCalloutLayer) return;
+    dayPhotoCalloutLayer.clearLayers();
     const photoCalloutOccupied = [];
     const renderedPhotoCallouts = new Set();
     const dayRouteLatLngs = routeRenderRecords.flatMap(record => record.latLngs);
@@ -1678,9 +1688,10 @@ async function showDayOverview(date) {
       const calloutKey = place.id || `${lat.toFixed(6)},${lng.toFixed(6)}`;
       if (renderedPhotoCallouts.has(calloutKey)) return;
       renderedPhotoCallouts.add(calloutKey);
-      addSelectedPlacePhotoCallout(dayOverviewLayer, [lat, lng], place, '', photoCalloutOccupied, dayRouteLatLngs, true);
+      addSelectedPlacePhotoCallout(dayPhotoCalloutLayer, [lat, lng], place, '', photoCalloutOccupied, dayRouteLatLngs, true);
     });
   };
+  dayPhotoCalloutRenderer = date ? renderDayPhotoCallouts : null;
   if (routeCacheChanged) save();
   renderRouteTotals();
   if (bounds.length && requestId === dayOverviewRequestId) {
