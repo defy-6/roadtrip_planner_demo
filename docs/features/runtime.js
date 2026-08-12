@@ -927,7 +927,14 @@ function renderLocations() {
       event.dataTransfer.effectAllowed = 'copy';
       card.classList.add('dragging-place');
     };
-    card.ondragend = () => { draggingPlaceId = ''; card.classList.remove('dragging-place'); };
+    card.ondragend = () => {
+      // 部分浏览器会在 drop 之前触发 dragend；延后一帧再清除来源，保证落点能读取到地点。
+      setTimeout(() => {
+        draggingPlaceId = '';
+        card.classList.remove('dragging-place');
+        document.querySelectorAll('.calendar-day.drop-target,.calendar-drop-preview').forEach(item => item.classList.remove('drop-target') || item.remove());
+      }, 0);
+    };
     return;
     const update = () => {
       const place = state.locations.find(item => item.id === card.dataset.placeId); if (!place) return;
@@ -2244,8 +2251,11 @@ $('#schedule').ondragover = event => {
 $('#schedule').ondrop = event => {
   const day = event.target.closest('.calendar-day'); if (!day) return;
   event.preventDefault();
-  const placeId = event.dataTransfer.getData('application/x-roadtrip-place');
+  // Safari / Chromium 对自定义 drag data 的 drop 读取并不完全一致，优先使用拖拽开始时保存的来源。
+  const placeId = draggingPlaceId || event.dataTransfer.getData('application/x-roadtrip-place');
   if (placeId) {
+    draggingPlaceId = '';
+    document.querySelectorAll('.calendar-day.drop-target,.calendar-drop-preview').forEach(item => item.classList.remove('drop-target') || item.remove());
     const place = state.locations.find(item => item.id === placeId); if (!place) return;
     const block = event.target.closest('.calendar-block');
     if (block) {
