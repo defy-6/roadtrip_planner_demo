@@ -1028,6 +1028,22 @@ function routeColorForDate(date) {
   const dates = [...new Set(state.schedule.map(item => item.date).filter(Boolean))].sort();
   return palette[Math.max(0, dates.indexOf(date)) % palette.length];
 }
+function routeColorForSegment(date, routeIndex = 0, allDates = false) {
+  if (allDates) return routeColorForDate(date);
+  const variants = [
+    ['#2563eb', '#0891b2', '#7c3aed', '#0369a1'],
+    ['#d97706', '#dc2626', '#b45309', '#c2410c'],
+    ['#059669', '#0f766e', '#65a30d', '#15803d'],
+    ['#7c3aed', '#2563eb', '#be123c', '#6d28d9'],
+    ['#dc2626', '#d97706', '#be123c', '#b91c1c'],
+    ['#0891b2', '#2563eb', '#0f766e', '#0e7490'],
+    ['#be123c', '#7c3aed', '#dc2626', '#9f1239'],
+    ['#65a30d', '#059669', '#d97706', '#4d7c0f'],
+    ['#374151', '#2563eb', '#7c3aed', '#475569']
+  ];
+  const dates = [...new Set(state.schedule.map(item => item.date).filter(Boolean))].sort();
+  return variants[Math.max(0, dates.indexOf(date)) % variants.length][routeIndex % variants[0].length];
+}
 function overviewRouteWeight(allDates = false) {
   const zoom = map?.getZoom?.() || 7;
   if (zoom <= 6) return allDates ? 3.2 : 3.6;
@@ -1051,8 +1067,8 @@ function refreshOverviewRouteWeights() {
     }
   });
 }
-function routeOverviewStyle(date, allDates = false) {
-  if (!allDates) return { color: routeColorForDate(date), weight: overviewRouteWeight(false), opacity: .9, smoothFactor: 0, lineCap: 'round', lineJoin: 'round' };
+function routeOverviewStyle(date, allDates = false, routeIndex = 0) {
+  if (!allDates) return { color: routeColorForSegment(date, routeIndex), weight: overviewRouteWeight(false), opacity: .9, smoothFactor: 0, lineCap: 'round', lineJoin: 'round' };
   const dates = [...new Set(state.schedule.map(item => item.date).filter(Boolean))].sort();
   const index = Math.max(0, dates.indexOf(date));
   return { color: routeColorForDate(date), weight: overviewRouteWeight(true), opacity: .72, smoothFactor: 0, lineCap: 'round', lineJoin: 'round' };
@@ -1180,8 +1196,9 @@ function renderMapRouteLegend(date) {
     const place = state.locations.find(item => item.id === event.locationId);
     return [place?.type || event.type];
   }).filter(Boolean).map(mapDisplayType))];
-  const driveCount = activeEvents.filter(event => event.type === 'drive').length;
-  const routeLegend = driveCount ? `<div><i class="route-legend-swatch" style="background:${routeColorForDate(activeDate)}"></i>路程${driveCount > 1 ? `（${driveCount} 段）` : ''}</div>` : '';
+  const driveEvents = activeEvents.filter(event => event.type === 'drive');
+  const driveCount = driveEvents.length;
+  const routeLegend = driveEvents.map((event, index) => `<div><i class="route-legend-swatch" style="background:${routeColorForSegment(activeDate, index)}"></i>${escapeHtml(event.title || `路程 ${index + 1}`)}</div>`).join('');
   mapRouteLegend.innerHTML = `<b>${activeDate ? `${escapeHtml(activeDate)} 图例` : '地图图例'}</b>${routeLegend}${placeTypes.map(type => `<div><i style="background:${placeTypeColor(type)}"></i>${escapeHtml(mapDisplayTypeName(type))}</div>`).join('')}<small>路程颜色与地图对应；点位颜色按地点库类别显示。</small>`;
   mapRouteLegend.hidden = !(driveCount || placeTypes.length);
 }
@@ -1310,7 +1327,7 @@ async function showDayOverview(date) {
   routeRenderRecords.forEach((record, recordIndex) => {
     const { latLngs, event, route, routeIndex } = record;
     const visualOffset = Math.max(-12, Math.min(12, offsets[recordIndex]));
-    const overviewStyle = routeOverviewStyle(event.date, !date);
+    const overviewStyle = routeOverviewStyle(event.date, !date, routeIndex);
     // 所有高德原始点都保留；仅对较短的近距离路线整体平移以形成视觉分道。
     const displayLatLngs = translateRouteForDisplay(latLngs, visualOffset);
     const line = L.polyline(displayLatLngs, overviewStyle);
