@@ -96,6 +96,25 @@ app.get('/api/geocode', async (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+app.get('/api/place-photos', async (req, res) => {
+  try {
+    const name = String(req.query.name || '').trim();
+    const address = String(req.query.address || '').trim();
+    if (!name || !address) throw new Error('请提供地点名称和完整地址');
+    const province = ['新疆', '西藏', '内蒙古', '宁夏', '广西', '北京', '上海', '天津', '重庆', '河北', '山西', '辽宁', '吉林', '黑龙江', '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南', '广东', '海南', '四川', '贵州', '云南', '陕西', '甘肃', '青海', '台湾', '香港', '澳门'].find(alias => address.includes(alias)) || '';
+    const city = [...address.matchAll(/([\u4e00-\u9fa5]{2,}?(?:自治区|自治州|地区|市|县|区))/g)].map(match => match[1]).at(-1) || province;
+    const data = await amap('/v3/place/text', { keywords: address, city, citylimit: city ? 'true' : 'false', offset: '10', page: '1', extensions: 'all' });
+    const poiPhotos = poi => Array.isArray(poi.photos) ? poi.photos : (poi.photos?.url ? [poi.photos] : []);
+    const candidates = (data.pois || []).filter(poi => poiPhotos(poi).length).map(poi => {
+      const text = `${poi.name || ''}${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}`;
+      const nameScore = [...new Set(name.replace(/[\s·()（）]/g, ''))].filter(char => (poi.name || '').includes(char)).length;
+      return { poi, score: (poi.name === name ? 100 : poi.name?.includes(name) ? 45 : 0) + nameScore + (province && text.includes(province) ? 25 : 0) };
+    }).sort((a, b) => b.score - a.score).slice(0, 3);
+    const photos = candidates.flatMap(({ poi }) => poiPhotos(poi).slice(0, 4).map(photo => ({ url: photo.url, title: photo.title || poi.name || name, poiName: poi.name || name, address: `${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}` }))).filter(photo => photo.url);
+    res.json({ photos: photos.slice(0, 8) });
+  } catch (error) { res.status(400).json({ error: error.message || '高德图片查询失败' }); }
+});
+
 app.post('/api/route', async (req, res) => {
   try {
     const { origin, destination, waypoints = [], strategy = '32', mode = 'driving', city, cityd } = req.body;
