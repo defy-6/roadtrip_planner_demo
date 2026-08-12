@@ -80,6 +80,22 @@ function selectedPointStyle(type, options = {}) {
 function mapLegendPointStyle(type) {
   return type === 'geography' ? 'background:#fff;border-color:#111827;box-shadow:0 0 0 1px #111827' : `background:${placeTypeColor(type)}`;
 }
+function addSelectedPlacePhotoCallout(layer, latLng, place, fallbackPhoto = '') {
+  const photo = place?.photo || fallbackPhoto;
+  if (!photo) return;
+  L.marker(latLng, {
+    pane: 'markerPane',
+    icon: L.divIcon({
+      className: 'selected-place-photo-marker',
+      iconSize: [96, 70],
+      iconAnchor: [48, 70],
+      html: `<div class="map-place-photo-callout" style="--place-color:${placeTypeColor(place?.type)}"><img src="${escapeHtml(photo)}" alt="${escapeHtml(place?.name || '地点')}图片"></div>`
+    }),
+    interactive: false,
+    keyboard: false,
+    zIndexOffset: 3000
+  }).addTo(layer);
+}
 const eventTypeNames = { spot: '游玩', food: '用餐', hotel: '入住 / 休息', drive: '路程', flight: '航班', transport: '交通 / 手续', service: '服务区停靠', fuel: '加油 / 采购', supply: '补给' };
 $('#editorType').append(new Option('路程', 'drive'));
 $('.type', template.content).append(new Option('路程', 'drive'));
@@ -609,19 +625,7 @@ async function showPlaceOnMap(placeId) {
   setOverviewFocusOpacity(true);
   routeLayer = L.featureGroup().addTo(map);
   L.circleMarker([lat, lng], selectedPointStyle(place.type)).addTo(routeLayer);
-  if (place.photo) {
-    L.marker([lat, lng], {
-      icon: L.divIcon({
-        className: 'selected-place-photo-marker',
-        iconSize: [96, 70],
-        iconAnchor: [48, 70],
-        html: `<div class="map-place-photo-callout" style="--place-color:${placeTypeColor(place.type)}"><img src="${escapeHtml(place.photo)}" alt="${escapeHtml(place.name || '地点')}图片"></div>`
-      }),
-      interactive: false,
-      keyboard: false,
-      zIndexOffset: 900
-    }).addTo(routeLayer);
-  }
+  addSelectedPlacePhotoCallout(routeLayer, [lat, lng], place);
   map.flyTo([lat, lng], Math.max(map.getZoom(), 11), { animate: true, duration: .45 });
   L.popup().setLatLng([lat, lng]).setContent(`<b>${escapeHtml(place.name || '未命名地点')}</b><br>${escapeHtml(point.address || place.address || '')}`).openOn(map);
 }
@@ -1962,8 +1966,7 @@ async function focusNode(node) {
     const [lng, lat] = mapCoords(...point.location.split(',').map(Number));
     if (routeLayer) map.removeLayer(routeLayer);
     routeLayer = L.layerGroup().addTo(map);
-    const color = markerColors[item.type] || markerColors.spot;
-    L.circleMarker([lat, lng], { radius: 14, color: '#fff', weight: 6, fillColor: color, fillOpacity: .95, interactive: false, className: 'selected-map-point' }).addTo(routeLayer);
+    L.circleMarker([lat, lng], selectedPointStyle(item.type, { interactive: false })).addTo(routeLayer);
     setOverviewFocusOpacity(true);
     fitSelectionWithDayContext(L.latLngBounds([[lat, lng]]), 12);
     L.popup().setLatLng([lat, lng]).setContent(`<b>${escapeHtml(item.name)}</b><br>${escapeHtml(item.address)}`).openOn(map);
@@ -2068,19 +2071,7 @@ async function focusScheduleEvent(index, { skipDriveQuery = false } = {}) {
       routeLayer = L.layerGroup().addTo(map);
       const color = markerColors[entry.type] || markerColors.spot;
       L.circleMarker([lat, lng], selectedPointStyle(place.type, { interactive: false })).addTo(routeLayer);
-      if (place.photo) {
-        L.marker([lat, lng], {
-          icon: L.divIcon({
-            className: 'selected-place-photo-marker',
-            iconSize: [96, 70],
-            iconAnchor: [48, 70],
-            html: `<div class="map-place-photo-callout" style="--place-color:${placeTypeColor(place.type)}"><img src="${escapeHtml(place.photo)}" alt="${escapeHtml(place.name || '地点')}图片"></div>`
-          }),
-          interactive: false,
-          keyboard: false,
-          zIndexOffset: 900
-        }).addTo(routeLayer);
-      }
+      addSelectedPlacePhotoCallout(routeLayer, [lat, lng], place, entry.photo);
       setOverviewFocusOpacity(true);
       fitSelectionWithDayContext(L.latLngBounds([[lat, lng]]), 12);
       L.popup().setLatLng([lat, lng]).setContent(`<b>${escapeHtml(entry.title)}</b><br>关联地点：${escapeHtml(place.name)}`).openOn(map);
