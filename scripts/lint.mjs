@@ -2,6 +2,9 @@ import { readFile } from 'node:fs/promises';
 
 const checks = [
   ['public/features/runtime.js', /document\.head\.append\(Object\.assign\(document\.createElement\('style'\)/, 'runtime must not inject dynamic <style> elements'],
+  ['public/features/runtime.js', /(?:localStorage|fetch\()/, 'runtime must not access infrastructure directly'],
+  ['public/app.js', /bootstrap\.js/, 'app entry must delegate startup to bootstrap'],
+  ['public/bootstrap.js', /createPersistence/, 'bootstrap must compose persistence before runtime'],
   ['public/index.html', /href="\/runtime\.css"/, 'index must load runtime.css'],
   ['public/index.html', /id="mapExportPreview"/, 'fixed export dialog shells belong in index.html'],
   ['public/index.html', /id="placeEditor"/, 'fixed place editor shell belongs in index.html'],

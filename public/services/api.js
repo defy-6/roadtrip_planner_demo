@@ -11,6 +11,8 @@ export function createApi() {
     savePlannerData: data => request('/api/planner-data', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
     geocode: ({ address, keyword = '' }) => request(`/api/geocode?${new URLSearchParams({ address, keyword })}`),
     calculateRoute: payload => request('/api/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
-    getWeather: params => request(`/api/weather?${new URLSearchParams(params)}`)
+    getWeather: params => request(`/api/weather?${new URLSearchParams(params)}`),
+    getPlacePhotos: ({ name, address }) => request(`/api/place-photos?${new URLSearchParams({ name, address })}`),
+    getPlaceDetails: ({ name, address }) => request(`/api/place-details?${new URLSearchParams({ name, address })}`)
   };
 }

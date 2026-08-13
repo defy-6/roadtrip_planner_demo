@@ -3,10 +3,13 @@ import { DEFAULT_PLAN_ID, DRIVE_TRAVEL_MODES, MARKER_COLORS, PLACE_TYPE_NAMES, T
 import { createRuntimePlannerState } from '../core/state.js';
 import { $, clockToMinute, escapeHtml, minuteToClock, pause } from '../core/utils.js';
 import { createPlansFeature } from './plans.js';
-import { runtime } from '../shared/runtime.js';
-import { createApi } from '../services/api.js';
 import { createGeocodeService } from '../services/geocode.js';
+import { pngFilePart, downloadCanvasPng } from './export/index.js';
+import { weatherSummary } from './weather/index.js';
+import { calculateRouteTotals, fmtDuration } from './route-summary/index.js';
 
+export function startRuntime({ runtime, api, persistence, migrate }) {
+const fmt = fmtDuration;
 const isShareMode = runtime.shareMode;
 const shareData = runtime.shareData;
 const shareAssetPath = runtime.assetBase;
@@ -447,8 +450,6 @@ const presetNodeTimes = {
   '2026-08-22|喀什机场':['11:20','11:45'],'2026-08-22|白沙湖':['14:00','15:10'],'2026-08-22|喀拉库勒湖':['16:00','18:00'],'2026-08-22|阿图什天门':['13:15','16:30'],'2026-08-22|巴楚县住宿':['20:00','22:00'],'2026-08-23|阿克苏机场':['14:30','17:00']
 };
 const amapKeywords = { '伊宁机场': '伊犁伊宁国际机场', '赛里木湖东门': '赛里木湖东门游客服务中心', '喀什机场': '喀什徕宁国际机场', '阿克苏机场': '阿克苏红旗坡机场' };
-const api = createApi();
-const pendingAddressMigrationKey = 'roadtrip-pending-addresses-v1';
 const universalLocationStorageKey = 'roadtrip-location-library';
 const universalRouteStorageKey = 'roadtrip-route-library';
 const versionStorageKey = key => `roadtrip-version-${key}`;
@@ -497,25 +498,6 @@ function repairEventNamedLocations(data) {
     place.name = suggestedPlaceName(place.address, place.resolved?.name, place.name);
   });
   return data;
-}
-
-function migrateFlightStopovers(data) {
-  (data.schedule || []).forEach(event => {
-    if (event.type !== 'flight' || !event.flightInfo || event.flightInfo.stopoverAirport) return;
-    const match = String(event.detail || '').match(/经停\s*([^，,；;]+?机场)[，,；;\s]+(\d{1,2}:\d{2})\s*[–—~-]\s*(\d{1,2}:\d{2})/);
-    if (!match) return;
-    event.flightInfo.stopoverAirport = match[1].trim();
-    event.flightInfo.stopoverArrivalTime = match[2];
-    event.flightInfo.stopoverDepartureTime = match[3];
-  });
-  return data;
-}
-
-function clearInitialPendingAddresses(data) {
-  if (localStorage.getItem(pendingAddressMigrationKey)) return data;
-  const clearIfUnconfirmed = entry => ['hotel', 'food'].includes(entry.type) ? { ...entry, address: '' } : entry;
-  localStorage.setItem(pendingAddressMigrationKey, 'true');
-  return { ...data, items: (data.items || []).map(clearIfUnconfirmed), schedule: (data.schedule || []).map(clearIfUnconfirmed) };
 }
 
 function outOfChina(lng, lat) { return lng < 72.004 || lng > 137.8347 || lat < .8293 || lat > 55.8271; }
@@ -857,12 +839,12 @@ function removeRoute(routeId) {
     if (!snapshot) return;
     snapshot.routes = (snapshot.routes || []).filter(route => route.id !== routeId);
     unlink(snapshot.schedule);
-    localStorage.setItem(versionStorageKey(key), JSON.stringify(snapshot));
+    persistence.write(versionStorageKey(key), snapshot);
   });
   if (!state.plans.length) {
     const shared = readSharedSchedule();
     unlink(Object.values(shared));
-    localStorage.setItem(sharedScheduleStorageKey, JSON.stringify(shared));
+    persistence.write(sharedScheduleStorageKey, shared);
   }
   renderSchedule(state.schedule); refreshEventCards(); save();
   showDayOverview(state.dayFilter);
@@ -1064,8 +1046,7 @@ function renderLocations() {
       if (!place?.name || !place?.address) { alert('请先填写地点名称和完整地址。'); return; }
       const button = event.currentTarget; button.disabled = true; button.textContent = '查询图片中…';
       try {
-        const response = await fetch(`/api/place-photos?${new URLSearchParams({ name: place.name, address: place.address })}`);
-        const data = await response.json(); if (!response.ok) throw new Error(data.error);
+        const data = await api.getPlacePhotos({ name: place.name, address: place.address });
         place.photoCandidates = data.photos || [];
         if (!place.photoCandidates.length) alert('高德暂未返回这个地点的可用图片。');
         save(); renderLocations();
@@ -1136,7 +1117,7 @@ function updateNodeFromSchedule(index) {
 }
 function readSharedSchedule() {
   if (isShareMode) return structuredClone(shareData?.sharedSchedule || {});
-  try { return JSON.parse(localStorage.getItem(sharedScheduleStorageKey) || '{}'); } catch { return {}; }
+  return persistence.read(sharedScheduleStorageKey, {});
 }
 function applySharedSchedule(entries) {
   if (state.plans.length) return entries;
@@ -1153,77 +1134,33 @@ function writeSharedSchedule() {
   if (state.plans.length) return;
   const shared = {};
   state.schedule.forEach(event => { if (event.sharedId) shared[event.sharedId] = structuredClone(event); });
-  localStorage.setItem(sharedScheduleStorageKey, JSON.stringify(shared));
+  persistence.write(sharedScheduleStorageKey, shared);
 }
-let fileSaveTimer;
-function parseStoredJson(key, fallback) { try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); } catch { return fallback; } }
+function parseStoredJson(key, fallback) { return persistence.read(key, fallback); }
+function fileSavePayload() {
+  return {
+    activeVersion: state.versionKey,
+    plans: state.plans,
+    versions: Object.fromEntries(state.plans.map(plan => [plan.id, parseStoredJson(versionStorageKey(plan.id), null)]).filter(([, snapshot]) => snapshot)),
+    locations: state.universalLocations,
+    routes: state.routes,
+    sharedSchedule: {},
+    updatedAt: new Date().toISOString()
+  };
+}
 function queueLocalFileSave() {
-  if (isShareMode) return;
-  clearTimeout(fileSaveTimer);
-  $('#fileSaveStatus').textContent = '等待写入本地文件…';
-  fileSaveTimer = setTimeout(async () => {
-    const payload = {
-      activeVersion: state.versionKey,
-      plans: state.plans,
-      versions: Object.fromEntries(state.plans.map(plan => [plan.id, parseStoredJson(versionStorageKey(plan.id), null)]).filter(([, snapshot]) => snapshot)),
-      locations: state.universalLocations,
-      routes: state.routes,
-      sharedSchedule: {},
-      updatedAt: new Date().toISOString()
-    };
-    try {
-      const response = await fetch('/api/planner-data', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!response.ok) throw new Error();
-      const result = await response.json();
-      $('#fileSaveStatus').textContent = `已写入本地文件 · ${new Date(result.savedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
-    } catch { $('#fileSaveStatus').textContent = '本地文件写入失败'; }
-  }, 300);
+  if (!isShareMode) persistence.queueFileSave(fileSavePayload);
 }
 function currentSnapshot() { return { name: $('#tripName').value, items: [...itemsEl.children].map(values), schedule: state.schedule, locations: state.locations, routes: state.routes, placeCategories: state.placeCategories, preferences: state.preferences, placeModelVersion: 1, routeLinkModeVersion: 1, planKey: state.versionKey, updatedAt: new Date().toISOString() }; }
 function save(){
-  if (isShareMode) return;
+  if (isShareMode || !persistence.autoSaveEnabled) return;
   (state.locations || []).forEach(syncPlaceToUniversal);
-  writeSharedSchedule(); const snapshot = currentSnapshot(); localStorage.setItem(universalLocationStorageKey, JSON.stringify(state.universalLocations)); localStorage.setItem(universalRouteStorageKey, JSON.stringify(state.routes)); localStorage.setItem('roadtrip', JSON.stringify(snapshot)); localStorage.setItem(versionStorageKey(state.versionKey), JSON.stringify(snapshot)); queueLocalFileSave();
+  writeSharedSchedule(); const snapshot = currentSnapshot(); persistence.write(universalLocationStorageKey, state.universalLocations); persistence.write(universalRouteStorageKey, state.routes); persistence.write('roadtrip', snapshot); persistence.write(versionStorageKey(state.versionKey), snapshot); queueLocalFileSave();
 }
 function typeForTitle(title = '') { return /航班|\b[A-Z]{2}\d{3,4}\b/i.test(title) ? 'flight' : /午餐|晚餐|早餐|简餐/.test(title) ? 'food' : /入住|休息|候机/.test(title) ? 'hotel' : /抵达|下机|取行李|租车|验车|还车|起飞/.test(title) ? 'transport' : /加油/.test(title) ? 'fuel' : /服务区/.test(title) ? 'service' : /驾驶|前往|返回|继续|返程|至/.test(title) ? 'drive' : 'spot'; }
-function migrateToUnifiedItems(data) {
-  if (!data.schedule?.length || data.items?.length >= data.schedule.length) return data;
-  const legacy = [...(data.items || [])];
-  const schedule = structuredClone(data.schedule);
-  schedule.forEach(entry => { const matchIndex = legacy.findIndex(item => item.date === entry.date && (entry.title.includes(item.name) || item.name.includes(entry.title))); if (matchIndex >= 0) { const item = legacy.splice(matchIndex, 1)[0]; Object.assign(entry, { address: item.address, type: item.type, photo: item.photo || '', routeLinks: entry.routeLinks }); } else entry.type ||= typeForTitle(entry.title); });
-  legacy.forEach(item => schedule.push({ date: item.date, start: item.startTime || '', end: item.endTime || '', title: item.name, detail: item.note || '', address: item.address, type: item.type, photo: item.photo || '' }));
-  schedule.sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
-  return { ...data, schedule, items: schedule.map((entry, scheduleIndex) => ({ type: entry.type || typeForTitle(entry.title), date: entry.date, startTime: entry.start, endTime: entry.end, name: entry.title, address: entry.address || '', note: entry.detail || '', photo: entry.photo || '', scheduleIndex })), planKey: data.planKey || defaultPlanId };
-}
-function migrateLegacyLocations(data) {
-  if (data.locations) return data;
-  const locations = [];
-  const schedule = (data.schedule || []).filter(entry => {
-    if (entry.type === 'hotel' && /住宿|酒店|民宿|客栈/.test(entry.title || '')) { locations.push({ id: crypto.randomUUID(), type: 'hotel', name: entry.title, address: '', note: entry.detail || '' }); return false; }
-    return true;
-  });
-  return { ...data, schedule, locations, items: schedule.map((entry, scheduleIndex) => ({ type: entry.type || typeForTitle(entry.title), date: entry.date, startTime: entry.start, endTime: entry.end, name: entry.title, address: entry.address || '', note: entry.detail || '', photo: entry.photo || '', scheduleIndex })) };
-}
-function migrateToPlaceModel(data) {
-  if (data.placeModelVersion === 1) return data;
-  const locations = [...(data.locations || [])];
-  const placeFor = entry => {
-    let place = locations.find(item => item.address && item.address === entry.address);
-    if (!place) { place = { id: crypto.randomUUID(), type: entry.type === 'food' ? 'food' : entry.type === 'hotel' ? 'hotel' : 'spot', name: entry.title, address: entry.address, note: entry.detail || '' }; locations.push(place); }
-    return place;
-  };
-  const schedule = (data.schedule || []).map(entry => entry.address && entry.type !== 'drive' ? { ...entry, locationId: placeFor(entry).id, address: '' } : entry);
-  return { ...data, schedule, locations, placeModelVersion: 1, items: schedule.map((entry, scheduleIndex) => ({ type: entry.type || typeForTitle(entry.title), date: entry.date, startTime: entry.start, endTime: entry.end, name: entry.title, address: '', note: entry.detail || '', photo: entry.photo || '', scheduleIndex })) };
-}
-function migrateExplicitRouteLinks(data) {
-  if (data.routeLinkModeVersion === 1) return data;
-  const schedule = (data.schedule || []).map(entry => entry.type === 'drive' ? { ...entry, routeLinks: {} } : entry);
-  return { ...data, schedule, routeLinkModeVersion: 1, items: schedule.map((entry, scheduleIndex) => ({ type: entry.type || typeForTitle(entry.title), date: entry.date, startTime: entry.start, endTime: entry.end, name: entry.title, address: entry.address || '', note: entry.detail || '', photo: entry.photo || '', scheduleIndex })) };
-}
 function mergeUniversalLocations(data) {
   if (isShareMode) return data;
-  let universal = [];
-  try { universal = JSON.parse(localStorage.getItem(universalLocationStorageKey) || '[]'); } catch { universal = []; }
+  let universal = persistence.read(universalLocationStorageKey, []);
   if (!Array.isArray(universal)) universal = [];
   const merged = universal.map(place => ({ ...place }));
   (data.locations || []).forEach(place => {
@@ -1274,8 +1211,7 @@ function upsertUniversalRoute(name, links) {
 }
 function mergeUniversalRoutes(data) {
   if (isShareMode) return data;
-  let universal = [];
-  try { universal = JSON.parse(localStorage.getItem(universalRouteStorageKey) || '[]'); } catch { universal = []; }
+  let universal = persistence.read(universalRouteStorageKey, []);
   if (!Array.isArray(universal)) universal = [];
   const merged = universal.map(route => ({ ...route, viaPlaceIds: [...(route.viaPlaceIds || [])] }));
   const resultTimestamp = result => Date.parse(result?.queriedAt || result?.updatedAt || 0) || 0;
@@ -1570,8 +1506,8 @@ async function showDayOverview(date) {
         if (isShareMode) continue;
         const paths = [];
         for (let i = 1; i < pointKeys.length; i += 1) {
-          const response = await fetch('/api/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: resolved.get(pointKeys[i - 1]), destination: resolved.get(pointKeys[i]), mode: normalizedTransportMode(links.transportMode), strategy: driveTravelMeta(links.travelMode).strategy, city: links.transit?.city, cityd: links.transit?.cityd }) });
-          const data = await response.json(); if (!response.ok) throw new Error(data.error); paths.push(data.route.paths[0]);
+          const data = await api.calculateRoute({ origin: resolved.get(pointKeys[i - 1]), destination: resolved.get(pointKeys[i]), mode: normalizedTransportMode(links.transportMode), strategy: driveTravelMeta(links.travelMode).strategy, city: links.transit?.city, cityd: links.transit?.cityd });
+          paths.push(data.route.paths[0]);
         }
         path = { duration: paths.reduce((sum, item) => sum + Number(item.duration), 0), distance: paths.reduce((sum, item) => sum + Number(item.distance), 0), tolls: paths.reduce((sum, item) => sum + Number(item.tolls || 0), 0), tollDistance: paths.reduce((sum, item) => sum + Number(item.toll_distance || 0), 0), steps: paths.flatMap(item => item.steps) };
         if (route) {
@@ -1676,7 +1612,7 @@ async function showDayOverview(date) {
   if (requestId === dayOverviewRequestId) renderedOverviewDate = date || '';
 }
 function load(rawData, versionKey = rawData.planKey || defaultPlanId) {
-  const data = migrateFlightStopovers(repairEventNamedLocations(mergeUniversalRoutes(mergeUniversalLocations(migrateExplicitRouteLinks(migrateToPlaceModel(migrateLegacyLocations(clearInitialPendingAddresses(migrateToUnifiedItems(rawData)))))))));
+  const data = repairEventNamedLocations(mergeUniversalRoutes(mergeUniversalLocations(migrate(rawData, typeForTitle))));
   state.versionKey = state.plans.some(plan => plan.id === versionKey) ? versionKey : state.plans[0]?.id || defaultPlanId;
   renderPlanSelect(); itemsEl.innerHTML = ''; $('#tripName').value = data.name || state.plans.find(plan => plan.id === state.versionKey)?.name || '我的自驾行程';
   state.schedule = applySharedSchedule((data.schedule || []).map(event => {
@@ -1694,7 +1630,7 @@ function load(rawData, versionKey = rawData.planKey || defaultPlanId) {
     if (route) event.routeLinks = { ...links, routeId: route.id };
   });
   const usedRouteIds = new Set(state.schedule.map(event => event.routeLinks?.routeId).filter(Boolean));
-  state.plans.forEach(plan => { try { const snapshot = JSON.parse(localStorage.getItem(versionStorageKey(plan.id)) || 'null'); (snapshot?.schedule || []).forEach(event => { if (event.routeLinks?.routeId) usedRouteIds.add(event.routeLinks.routeId); }); } catch {} });
+  state.plans.forEach(plan => { const snapshot = persistence.read(versionStorageKey(plan.id), null); (snapshot?.schedule || []).forEach(event => { if (event.routeLinks?.routeId) usedRouteIds.add(event.routeLinks.routeId); }); });
   state.routes = state.routes.filter(route => usedRouteIds.has(route.id));
   state.preferences = { ...state.preferences, ...(data.preferences || {}) }; state.dayFilter = '';
   state.schedule.forEach((entry, scheduleIndex) => {
@@ -1709,7 +1645,7 @@ function loadPreset(key, forceOriginal = false) {
     renderSchedule(state.schedule);
     return;
   }
-  if (!forceOriginal) { const draft = localStorage.getItem(versionStorageKey(key)); if (draft) { load(JSON.parse(draft), key); renderSchedule(state.schedule); return; } }
+  if (!forceOriginal) { const draft = persistence.read(versionStorageKey(key), null); if (draft) { load(draft, key); renderSchedule(state.schedule); return; } }
   const presetKey = PRESET_PLANS[key] ? key : 'b';
   const plan = PRESET_PLANS[presetKey];
   if (!plan) return;
@@ -2066,7 +2002,7 @@ async function calculateDriveRoute(stops, sharedRoute, routeName, persist = true
     const transport = normalizedTransportMode(transportMode);
     const geos = await Promise.all(stops.map(stop => geocode(stop.address, stop.title || stop.name)));
     const paths = [];
-    for (let i = 1; i < geos.length; i += 1) { const response = await fetch('/api/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: geos[i - 1].location, destination: geos[i].location, mode: transport, strategy: travel.strategy, city: transit?.city, cityd: transit?.cityd }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); paths.push(data.route.paths[0]); await pause(400); }
+    for (let i = 1; i < geos.length; i += 1) { const data = await api.calculateRoute({ origin: geos[i - 1].location, destination: geos[i].location, mode: transport, strategy: travel.strategy, city: transit?.city, cityd: transit?.cityd }); paths.push(data.route.paths[0]); await pause(400); }
     const path = { duration: paths.reduce((sum, item) => sum + Number(item.duration), 0), distance: paths.reduce((sum, item) => sum + Number(item.distance), 0), tolls: paths.reduce((sum, item) => sum + Number(item.tolls || 0), 0), tollDistance: paths.reduce((sum, item) => sum + Number(item.toll_distance || 0), 0), steps: paths.flatMap(item => item.steps) };
     $('#duration').textContent = fmt(Number(path.duration)); $('#distance').textContent = `${(Number(path.distance) / 1000).toFixed(1)} 公里 · 此段路程`;
     const buffer = Number(state.preferences.buffer || 30);
@@ -2281,14 +2217,14 @@ function removeEventFromStoredVersion(versionKey, event) {
     const scheduleIndex = Number(item.scheduleIndex);
     return Number.isInteger(scheduleIndex) && scheduleIndex > removedIndex ? { ...item, scheduleIndex: scheduleIndex - 1 } : item;
   });
-  localStorage.setItem(versionStorageKey(versionKey), JSON.stringify(snapshot));
+  persistence.write(versionStorageKey(versionKey), snapshot);
 }
 function deleteScheduleEvent(index) {
   if (isShareMode) return;
   const event = state.schedule[index]; if (!event || !confirm(`确定删除“${event.title}”吗？\n\n关联的通用地点和通用路线会保留。`)) return;
   if (event.sharedId && !state.plans.length) {
     const shared = readSharedSchedule(); delete shared[event.sharedId];
-    localStorage.setItem(sharedScheduleStorageKey, JSON.stringify(shared));
+    persistence.write(sharedScheduleStorageKey, shared);
     state.plans.forEach(plan => removeEventFromStoredVersion(plan.id, event));
   }
   state.schedule.splice(index, 1);
@@ -2655,8 +2591,7 @@ async function queryNewPlacePhotos() {
   const button = $('#queryNewPlacePhotos'); button.disabled = true; button.textContent = '查询中…';
   $('#newPlaceAmapStatus').textContent = '正在查询高德图片…';
   try {
-    const response = await fetch(`/api/place-photos?${new URLSearchParams({ name, address })}`);
-    const data = await response.json(); if (!response.ok) throw new Error(data.error || '高德图片查询失败');
+    const data = await api.getPlacePhotos({ name, address });
     pendingNewPlacePhotos = data.photos || []; pendingNewPlacePhotoIndex = -1; renderNewPlacePhotoCandidates();
     const source = data.cached ? '本地缓存' : '本次高德查询';
     $('#newPlaceAmapStatus').textContent = pendingNewPlacePhotos.length ? `找到 ${pendingNewPlacePhotos.length} 张高德候选图（${source}），请选择一张。` : `高德暂未返回可用图片（${source}）。`;
@@ -2671,8 +2606,7 @@ $('#queryNewPlaceDetails').onclick = async event => {
   const button = event.currentTarget; button.disabled = true; button.textContent = '查询中…';
   $('#newPlaceAmapStatus').textContent = '正在获取高德 POI 详情…';
   try {
-    const response = await fetch(`/api/place-details?${new URLSearchParams({ name, address })}`);
-    const data = await response.json(); if (!response.ok) throw new Error(data.error || '高德 POI 详情查询失败');
+    const data = await api.getPlaceDetails({ name, address });
     const detail = data.poi || {};
     $('#newPlaceIntro').value = detail.intro || ''; $('#newPlaceOpenTime').value = detail.openTime || ''; $('#newPlaceRating').value = detail.rating || ''; $('#newPlaceReferenceCost').value = detail.referenceCost || ''; $('#newPlaceTicketPrice').value = detail.ticketPrice || ''; $('#newPlaceTags').value = detail.tags || '';
     if (detail.location) {
@@ -2741,8 +2675,7 @@ $('#fetchSelectedPhotos').onclick = async event => {
   for (const place of selected) {
     button.textContent = `获取图片 ${completed}/${selected.length}`;
     try {
-      const response = await fetch(`/api/place-photos?${new URLSearchParams({ name: place.name, address: place.address })}`);
-      const data = await response.json(); if (!response.ok) throw new Error(data.error);
+      const data = await api.getPlacePhotos({ name: place.name, address: place.address });
       place.photoCandidates = data.photos || [];
       if (place.photoCandidates.length) found += 1;
     } catch { /* 一个地点失败不影响其余候选图查询。 */ }
@@ -2803,7 +2736,7 @@ $('#planForm', planDialog).onsubmit = event => {
   if (!name) return;
   if (planDialogMode === 'delete') {
     if (!current || name !== current.name) { $('#planDialogHint', planDialog).textContent = '计划名称不匹配，请重新输入。'; return; }
-    localStorage.removeItem(versionStorageKey(current.id)); state.plans = state.plans.filter(item => item.id !== current.id); state.versionKey = state.plans[0].id;
+    persistence.remove(versionStorageKey(current.id)); state.plans = state.plans.filter(item => item.id !== current.id); state.versionKey = state.plans[0].id;
     renderPlanSelect(); const next = parseStoredJson(versionStorageKey(state.versionKey), null);
     if (next) { load(next, state.versionKey); renderSchedule(state.schedule); } else loadPreset(state.versionKey);
   } else {
@@ -2811,7 +2744,7 @@ $('#planForm', planDialog).onsubmit = event => {
     const snapshot = planDialogMode === 'copy'
       ? { ...structuredClone(currentSnapshot()), name, planKey: id, updatedAt: new Date().toISOString() }
       : { name, items: [], schedule: [], locations: [], routes: [], placeCategories: [], preferences: structuredClone(state.preferences), placeModelVersion: 1, routeLinkModeVersion: 1, planKey: id };
-    state.plans.push({ id, name }); state.versionKey = id; localStorage.setItem(versionStorageKey(id), JSON.stringify(snapshot)); renderPlanSelect(); load(snapshot, id);
+    state.plans.push({ id, name }); state.versionKey = id; persistence.write(versionStorageKey(id), snapshot); renderPlanSelect(); load(snapshot, id);
     snapshot.schedule.length ? renderSchedule(state.schedule) : renderManualSchedule();
   }
   planDialog.close(); save();
@@ -2820,15 +2753,6 @@ $('#newPlanBtn').onclick = () => openPlanDialog('new');
 $('#copyPlanBtn').onclick = () => openPlanDialog('copy');
 $('#deletePlanBtn').onclick = () => { if (state.plans.length > 1) openPlanDialog('delete'); };
 const geocode = createGeocodeService(api, { pause, aliases: amapKeywords });
-const weatherCodeLabel = code => ({ 0: '晴', 1: '大致晴', 2: '多云', 3: '阴', 45: '雾', 48: '雾凇', 51: '毛毛雨', 53: '毛毛雨', 55: '毛毛雨', 61: '小雨', 63: '中雨', 65: '大雨', 71: '小雪', 73: '中雪', 75: '大雪', 80: '阵雨', 81: '阵雨', 82: '强阵雨', 95: '雷雨', 96: '冰雹雷雨', 99: '强冰雹雷雨' }[Number(code)] || '天气待定');
-function weatherSummary(weather) {
-  if (!weather) return '';
-  const condition = weather.conditionText || weatherCodeLabel(weather.weatherCode);
-  const parts = [`${condition} ${Number(weather.temperature).toFixed(0)}°C`];
-  if (Number.isFinite(Number(weather.precipitationProbability))) parts.push(`降水 ${Number(weather.precipitationProbability).toFixed(0)}%`);
-  if (Number.isFinite(Number(weather.windSpeed))) parts.push(`风 ${Number(weather.windSpeed).toFixed(0)}km/h`);
-  return parts.join(' · ');
-}
 async function queryEventWeather(index, { silent = false } = {}) {
   const event = state.schedule[index];
   if (!event) return;
@@ -2850,8 +2774,7 @@ async function queryEventWeather(index, { silent = false } = {}) {
         if (place.id) place.resolved = { name: result.name || place.name, address: result.formatted_address || place.address, location: point };
       }
       const [lng, lat] = gcjToWgs(...point.split(',').map(Number));
-      const response = await fetch(`/api/weather?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}&date=${encodeURIComponent(date)}&time=${encodeURIComponent(time || '12:00')}`);
-      const weather = await response.json(); if (!response.ok) throw new Error(weather.error || '天气查询失败');
+      const weather = await api.getWeather({ latitude: lat, longitude: lng, date, time: time || '12:00' });
       return weather;
     };
     if (eventType === 'drive') {
@@ -2908,15 +2831,6 @@ async function updateVisibleScheduleWeather() {
   alert(failed.length ? `${scope}：已更新 ${succeeded} 张卡片；${failed.length} 张未更新（通常是地点尚未确定）。\n${failed.slice(0, 3).join('\n')}` : `${scope}：已更新 ${succeeded} 张卡片天气。`);
 }
 updateScheduleWeatherButton.addEventListener('click', updateVisibleScheduleWeather);
-function pngFilePart(value) {
-  return String(value || 'roadtrip').trim().replace(/[\\/:*?"<>|\s]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'roadtrip';
-}
-function downloadCanvasPng(canvas, filename) {
-  const link = document.createElement('a');
-  link.download = filename;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-}
 function nextPaint() { return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); }
 function flattenMapLatLngs(latLngs) {
   return (latLngs || []).flatMap(item => Array.isArray(item) ? flattenMapLatLngs(item) : item ? [item] : []);
@@ -3099,27 +3013,16 @@ async function showStopsOnMap(nodes) {
   const latLngs = stops.map(({ node, point }) => { const [lng, lat] = mapCoords(...point.split(',').map(Number)); const marker = L.circleMarker([lat, lng], mapPointStyle(node.type)).bindPopup(`${node.date} · ${node.name}`).addTo(markerLayer); if (Number.isInteger(node.scheduleIndex)) marker.on('click', () => focusScheduleEvent(node.scheduleIndex)); return [lat, lng]; });
   map.fitBounds(L.latLngBounds(latLngs), { padding: [38, 38], maxZoom: 10 });
 }
-const fmt = seconds => { const h=Math.floor(seconds/3600),m=Math.round(seconds%3600/60);return h?`${h}小时${m}分`:`${m}分钟`; };
 function routeTotals() {
-  const events = state.schedule.filter(event => event.type === 'drive' && (!state.dayFilter || event.date === state.dayFilter));
-  const days = new Map(); let pending = 0;
-  events.forEach(event => {
-    const route = routeForScheduleEvent(event);
-    if (!route?.amap) { pending += 1; return; }
-    const day = days.get(event.date) || { distance: 0, duration: 0, tolls: 0, count: 0 };
-    day.distance += Number(route.amap.distance || 0); day.duration += Number(route.amap.duration || 0); day.tolls += Number(route.amap.tolls || 0); day.count += 1;
-    days.set(event.date, day);
-  });
-  const total = [...days.values()].reduce((sum, day) => ({ distance: sum.distance + day.distance, duration: sum.duration + day.duration, tolls: sum.tolls + day.tolls, count: sum.count + day.count }), { distance: 0, duration: 0, tolls: 0, count: 0 });
-  return { days, total, pending, eventCount: events.length };
+  return calculateRouteTotals(state.schedule, routeForScheduleEvent, state.dayFilter);
 }
 function renderRouteTotals(showDetail = false) {
   const { days, total, pending, eventCount } = routeTotals();
-  $('#duration').textContent = total.count ? fmt(total.duration) : '—';
+  $('#duration').textContent = total.count ? fmtDuration(total.duration) : '—';
   $('#distance').textContent = total.count ? `${(total.distance / 1000).toFixed(1)} 公里 · 过路费约 ${total.tolls.toFixed(0)} 元 · ${total.count}/${eventCount} 段已确认${pending ? ` · ${pending} 段待查询` : ''}` : `${eventCount} 段路程尚未查询`;
   const detail = $('#routeSummaryDetail');
   if (!showDetail) return;
-  const rows = [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, day]) => `<div class="route-summary-day"><b>${escapeHtml(date)}</b> · ${(day.distance / 1000).toFixed(1)} 公里 · ${fmt(day.duration)} · 过路费 ${day.tolls.toFixed(0)} 元 · ${day.count} 段</div>`).join('');
+  const rows = [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, day]) => `<div class="route-summary-day"><b>${escapeHtml(date)}</b> · ${(day.distance / 1000).toFixed(1)} 公里 · ${fmtDuration(day.duration)} · 过路费 ${day.tolls.toFixed(0)} 元 · ${day.count} 段</div>`).join('');
   detail.innerHTML = `<b>${state.dayFilter ? `${escapeHtml(state.dayFilter)} 路程汇总` : '方案分日路程汇总'}</b><div class="route-summary-days">${rows || '<div class="route-summary-day">尚无已查询的路程。</div>'}</div><small>仅相加已保存的高德路线；${pending ? `另有 ${pending} 段待明确起终点或查询。` : '全部已确认路段均已统计。'}</small>`;
   detail.hidden = false;
 }
@@ -3135,7 +3038,7 @@ $('#routeBtn').onclick = () => {
   button.setAttribute('aria-expanded', 'true');
 };
 async function initializePlanner() {
-  let cached = isShareMode ? null : localStorage.getItem('roadtrip');
+  let cached = isShareMode ? null : persistence.readRaw('roadtrip');
   setPlanCatalog({});
   const hydrate = fileData => {
     if (!fileData) return;
@@ -3148,17 +3051,17 @@ async function initializePlanner() {
       $('#fileSaveStatus').textContent = `共享只读版${stamp ? ` · 更新于 ${stamp}` : ''}`;
       return;
     }
-    if (normalized.locations) localStorage.setItem(universalLocationStorageKey, JSON.stringify(normalized.locations));
-    if (normalized.routes) localStorage.setItem(universalRouteStorageKey, JSON.stringify(normalized.routes));
-    state.plans.forEach(plan => { if (normalized.versions?.[plan.id]) localStorage.setItem(versionStorageKey(plan.id), JSON.stringify(normalized.versions[plan.id])); });
+    if (normalized.locations) persistence.write(universalLocationStorageKey, normalized.locations);
+    if (normalized.routes) persistence.write(universalRouteStorageKey, normalized.routes);
+    state.plans.forEach(plan => { if (normalized.versions?.[plan.id]) persistence.write(versionStorageKey(plan.id), normalized.versions[plan.id]); });
     const active = normalized.versions?.[activeKey];
-    if (active) { cached = JSON.stringify(active); localStorage.setItem('roadtrip', cached); }
+    if (active) { cached = JSON.stringify(active); persistence.write('roadtrip', active); }
     const stamp = fileData.updatedAt ? new Date(fileData.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }) : '';
     $('#fileSaveStatus').textContent = '已从本地文件载入';
   };
   if (isShareMode) hydrate(shareData);
   else try {
-    const response = await fetch('/api/planner-data'); const result = await response.json(); hydrate(result.data);
+    hydrate((await api.getPlannerData()).data);
   } catch { $('#fileSaveStatus').textContent = cached ? '本地文件读取失败，已使用浏览器缓存' : '未能读取本地文件'; }
   if (cached) {
     const data = JSON.parse(cached); const inferredKey = state.plans.some(plan => plan.id === data.planKey) ? data.planKey : state.versionKey;
@@ -3168,5 +3071,8 @@ async function initializePlanner() {
   if (!isShareMode) await ensureFlightAirportLinks();
   await showDayOverview('');
   renderRouteTotals();
+  persistence.enableAutoSave();
+  if (!isShareMode) save();
 }
 initializePlanner();
+}
