@@ -1,3 +1,5 @@
+// P1 infrastructure boundary. Runtime has not been switched to this adapter yet.
+// New feature code must use this module instead of calling LocalStorage directly.
 export function createPersistence({ runtime, store, saveFile }) {
   let timer;
   const editable = !runtime.shareMode;

@@ -1,3 +1,4 @@
+// P3 store boundary. Runtime is still bridged through createRuntimePlannerState.
 export function createStore(initialState = {}) {
   let state = structuredClone(initialState);
   const listeners = new Set();
