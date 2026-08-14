@@ -2,6 +2,12 @@
 set -e
 
 cd "$(dirname "$0")"
+
+if ! git diff --cached --quiet; then
+  osascript -e 'display alert "无法自动发布" message "暂存区已有其他改动，请先提交或取消暂存后再发布。"'
+  exit 1
+fi
+
 npm run build:share
 git add -f docs
 git add .github/workflows/deploy-pages.yml public package.json package-lock.json README.md publish-share.command scripts/build-share.mjs

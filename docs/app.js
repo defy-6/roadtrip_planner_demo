@@ -1,3 +1,3 @@
-import './features/runtime.js';
+import './bootstrap.js';
 
-// 应用入口只负责装配运行模块；业务逻辑按目录逐步拆分。
+// 应用入口只负责装配 bootstrap；业务逻辑不直接触达基础设施。

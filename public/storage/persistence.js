@@ -2,7 +2,8 @@
 export function createPersistence({ runtime, api, onSaveStatus = () => {} }) {
   let timer;
   let enabled = false;
-  const editable = !runtime.shareMode;
+  const editable = runtime.editable !== false && !runtime.shareMode;
+  let onFileSaved = () => {};
 
   function read(key, fallback = null) {
     if (!editable) return fallback;
@@ -35,10 +36,11 @@ export function createPersistence({ runtime, api, onSaveStatus = () => {} }) {
     timer = setTimeout(async () => {
       try {
         const result = await api.savePlannerData(buildPayload());
+        onFileSaved(result);
         onSaveStatus(`已写入本地文件 · ${new Date(result.savedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`);
       } catch { onSaveStatus('本地文件写入失败'); }
     }, delay);
   }
 
-  return { read, readRaw, write, remove, readFlag, writeFlag, enableAutoSave, disableAutoSave, queueFileSave, get autoSaveEnabled() { return enabled; }, editable };
+  return { read, readRaw, write, remove, readFlag, writeFlag, enableAutoSave, disableAutoSave, queueFileSave, setOnFileSaved: listener => { onFileSaved = typeof listener === 'function' ? listener : () => {}; }, get autoSaveEnabled() { return enabled; }, editable };
 }

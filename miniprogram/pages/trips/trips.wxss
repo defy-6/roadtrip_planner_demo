@@ -1,0 +1,12 @@
+.userline { display: flex; justify-content: space-between; align-items: center; }
+.nickname { font-size: 32rpx; font-weight: 600; }
+.section-title { font-size: 30rpx; font-weight: 600; margin-bottom: 8rpx; }
+.trip-row {
+  display: flex; justify-content: space-between; align-items: center;
+  border: 1rpx solid #e3e6ea; border-radius: 12rpx;
+  padding: 20rpx; margin: 12rpx 0;
+}
+.trip-row:active { background: #f7f9fb; }
+.trip-name { font-size: 30rpx; font-weight: 500; }
+.arrow { color: #b9c4d1; font-size: 36rpx; }
+button { margin-top: 16rpx; }

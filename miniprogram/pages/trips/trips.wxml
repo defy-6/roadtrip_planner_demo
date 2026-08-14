@@ -1,0 +1,47 @@
+<view class="container">
+  <view class="card userline">
+    <text class="nickname">{{user.nickname || user.username || '行远用户'}}</text>
+    <view class="user-actions">
+      <text class="hint action" bindtap="bindAccount">绑定账号</text>
+      <text class="hint action" bindtap="logout">退出登录</text>
+    </view>
+  </view>
+
+  <view class="error" wx:if="{{error}}">{{error}}</view>
+
+  <view class="card">
+    <view class="section-title">新建行程</view>
+    <input class="input" placeholder="行程名称，例如：川西环线" value="{{newName}}" data-field="newName" bindinput="onInput" />
+    <button class="btn-primary" bindtap="createTrip" disabled="{{busy || !newName}}">创建</button>
+  </view>
+
+  <view class="card">
+    <view class="section-title">我的行程</view>
+    <block wx:if="{{mine.length}}">
+      <view class="trip-row" wx:for="{{mine}}" wx:key="_id" data-id="{{item._id}}" bindtap="openTrip">
+        <view class="trip-main">
+          <view class="trip-name">{{item.name}}</view>
+          <view class="hint">创建者 · 更新于 {{item.updatedText}}</view>
+        </view>
+        <text class="arrow">›</text>
+      </view>
+    </block>
+    <view class="hint" wx:else>还没有行程，上面新建一个吧</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">我协作的行程</view>
+    <block wx:if="{{shared.length}}">
+      <view class="trip-row" wx:for="{{shared}}" wx:key="_id" data-id="{{item._id}}" bindtap="openTrip">
+        <view class="trip-main">
+          <view class="trip-name">{{item.name}}</view>
+          <view class="hint">协作者 · 更新于 {{item.updatedText}}</view>
+        </view>
+        <text class="arrow">›</text>
+      </view>
+    </block>
+    <view class="hint" wx:else>暂无；输入分享码加入朋友的行程</view>
+    <input class="input" placeholder="分享码（8 位，例如 AB2C3D4E）" value="{{joinCode}}" data-field="joinCode" bindinput="onInput" />
+    <button class="btn-ghost" bindtap="joinTrip" disabled="{{busy || !joinCode}}">加入协作</button>
+  </view>
+</view>

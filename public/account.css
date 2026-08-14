@@ -1,0 +1,24 @@
+/* 账号 UI（朴素占位版）：视觉待设计稿落地后整体替换 */
+.account-dialog section { max-width: 460px; }
+.account-dialog h3 { margin: 0 0 12px; }
+.account-dialog label { display: grid; gap: 4px; margin: 10px 0; }
+.account-dialog input[type='text'],
+.account-dialog input[type='password'] {
+  padding: 7px 10px; border: 1px solid #d6d9de; border-radius: 6px; font: inherit;
+}
+.account-dialog .account-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.account-error { color: #c0392b; background: #fdecea; border: 1px solid #f5c6c0; border-radius: 6px; padding: 8px 10px; }
+.account-userline { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.account-dialog h4 { margin: 14px 0 6px; font-size: 13px; color: #5a6472; }
+.account-trips ul { list-style: none; margin: 0; padding: 0; }
+.account-trip {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 8px 10px; border: 1px solid #e3e6ea; border-radius: 8px; margin-bottom: 6px; cursor: pointer;
+}
+.account-trip:hover { border-color: #b9c4d1; background: #f7f9fb; }
+.account-trip b, .account-trip small { display: block; }
+.account-trip small { color: #8892a0; margin-top: 2px; }
+.account-trip-active { color: #2f73a9; font-size: 12px; white-space: nowrap; }
+.account-create { margin: 10px 0; }
+.account-create summary { cursor: pointer; color: #2f73a9; margin-bottom: 6px; }
+.account-create label { display: grid; gap: 4px; margin: 6px 0; }

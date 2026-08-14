@@ -1,25 +1,46 @@
-// P1 infrastructure boundary. Runtime has not been switched to this adapter yet.
-// New feature code must use this module instead of calling LocalStorage directly.
-export function createPersistence({ runtime, store, saveFile }) {
+// Browser persistence is intentionally the sole LocalStorage boundary.
+export function createPersistence({ runtime, api, onSaveStatus = () => {} }) {
   let timer;
-  const editable = !runtime.shareMode;
+  let enabled = false;
+  const editable = runtime.editable !== false && !runtime.shareMode;
+  let onFileSaved = () => {};
 
   function read(key, fallback = null) {
     if (!editable) return fallback;
-    try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); } catch { return fallback; }
+    try {
+      const value = localStorage.getItem(key);
+      return value === null ? fallback : JSON.parse(value);
+    } catch { return fallback; }
+  }
+
+  function readRaw(key) {
+    if (!editable) return null;
+    try { return localStorage.getItem(key); } catch { return null; }
   }
 
   function write(key, value) {
     if (editable) localStorage.setItem(key, JSON.stringify(value));
   }
 
-  function queueSave(buildPayload, delay = 300) {
-    if (!editable) return;
+  function remove(key) { if (editable) localStorage.removeItem(key); }
+  function readFlag(key) { return editable && localStorage.getItem(key) === 'true'; }
+  function writeFlag(key) { if (editable) localStorage.setItem(key, 'true'); }
+
+  function enableAutoSave() { enabled = editable; }
+  function disableAutoSave() { enabled = false; clearTimeout(timer); }
+
+  function queueFileSave(buildPayload, delay = 300) {
+    if (!enabled) return;
     clearTimeout(timer);
-    timer = setTimeout(() => saveFile?.(buildPayload()), delay);
+    onSaveStatus('等待写入本地文件…');
+    timer = setTimeout(async () => {
+      try {
+        const result = await api.savePlannerData(buildPayload());
+        onFileSaved(result);
+        onSaveStatus(`已写入本地文件 · ${new Date(result.savedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`);
+      } catch { onSaveStatus('本地文件写入失败'); }
+    }, delay);
   }
 
-  function saveSnapshot(key, snapshot) { write(key, snapshot); }
-  function readSnapshot(key) { return read(key); }
-  return { read, write, queueSave, saveSnapshot, readSnapshot, editable, store };
+  return { read, readRaw, write, remove, readFlag, writeFlag, enableAutoSave, disableAutoSave, queueFileSave, setOnFileSaved: listener => { onFileSaved = typeof listener === 'function' ? listener : () => {}; }, get autoSaveEnabled() { return enabled; }, editable };
 }

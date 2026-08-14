@@ -1,0 +1,131 @@
+<view class="container">
+  <view class="error" wx:if="{{error}}">{{error}}</view>
+
+  <view class="card trip-head" wx:if="{{!loading}}">
+    <view class="trip-title-line">
+      <view class="trip-title">{{name}}</view>
+      <text class="rename-link" bindtap="renameTrip">重命名</text>
+    </view>
+    <view class="hint">{{role === 'owner' ? '创建者' : '协作者'}} · 更新于 {{updatedText}}</view>
+    <view class="share-line" wx:if="{{shareEnabled}}">
+      <text class="share-code" bindtap="copyCode">{{shareCode}}</text>
+      <text class="hint" bindtap="copyCode">点击复制</text>
+    </view>
+    <button wx:if="{{role === 'owner'}}" class="btn-ghost share-toggle" bindtap="toggleShare" disabled="{{busy}}">
+      {{shareEnabled ? '关闭分享' : '开启分享'}}
+    </button>
+    <view class="hint" wx:else>你是协作者：分享开关由创建者管理</view>
+  </view>
+
+  <view class="segmented" wx:if="{{!loading}}">
+    <view class="seg-item {{activeTab === 'schedule' ? 'is-active' : ''}}" data-tab="schedule" bindtap="switchTab">时间表</view>
+    <view class="seg-item {{activeTab === 'map' ? 'is-active' : ''}}" data-tab="map" bindtap="switchTab">地图</view>
+    <view class="seg-item {{activeTab === 'plans' ? 'is-active' : ''}}" data-tab="plans" bindtap="switchTab">计划</view>
+    <view class="seg-item {{activeTab === 'places' ? 'is-active' : ''}}" data-tab="places" bindtap="switchTab">地点</view>
+  </view>
+
+  <!-- 时间表 -->
+  <block wx:if="{{activeTab === 'schedule'}}">
+    <scroll-view class="date-strip" scroll-x enable-flex wx:if="{{dates.length}}">
+      <view class="date-chip {{activeDate === item ? 'is-active' : ''}}" wx:for="{{dates}}" wx:key="*this" data-date="{{item}}" bindtap="pickDate">
+        <text>{{item.slice(5)}}</text>
+        <text class="date-week">{{item}}</text>
+      </view>
+    </scroll-view>
+
+    <view class="card" wx:if="{{!loading}}">
+      <view class="schedule-tools">
+        <view class="section-title">{{activeDate || '选择日期'}} 的事件</view>
+        <text class="weather-link" bindtap="showWeather">☁ 查天气</text>
+      </view>
+      <block wx:if="{{events.length}}">
+        <view class="event-row type-{{item.type}}" wx:for="{{events}}" wx:key="index" data-index="{{item.index}}" bindtap="openEdit">
+          <view class="ev-time">
+            <text>{{item.start || '--:--'}}</text>
+            <text class="ev-end">{{item.end || ''}}</text>
+          </view>
+          <view class="ev-main">
+            <view class="ev-title">{{item.title}}</view>
+            <view class="hint ev-detail">{{item.detail || (typeLabel(item.type))}}</view>
+          </view>
+          <text class="ev-arrow">›</text>
+        </view>
+      </block>
+      <view class="hint empty" wx:else>这一天还没有事件，点下方新建</view>
+    </view>
+
+    <button class="add-btn" bindtap="addEvent" disabled="{{loading}}">＋ 新建事件</button>
+  </block>
+
+  <!-- 地图 -->
+  <block wx:if="{{activeTab === 'map'}}">
+    <view class="map-toolbar">
+      <text class="hint">点击标记查看名称</text>
+      <button class="btn-ghost map-save" bindtap="saveMap">保存地图</button>
+    </view>
+    <map id="tripMap" class="trip-map" longitude="{{mapCenter.longitude}}" latitude="{{mapCenter.latitude}}"
+         scale="6" markers="{{mapMarkers}}" polylines="{{mapPolylines}}"
+         include-points="{{mapPoints}}" show-location="{{false}}"></map>
+    <view class="card map-stats">
+      <view class="map-stat"><b>{{mapStats.distance}}</b><small>总里程</small></view>
+      <view class="map-stat"><b>{{mapStats.duration}}</b><small>预计用时</small></view>
+      <view class="map-stat"><b>{{mapStats.count}}</b><small>已确认路段</small></view>
+    </view>
+    <view class="hint map-hint" wx:if="{{!mapMarkers.length && !mapPolylines.length}}">该计划还没有可显示的地点与路线，请在 web 端添加</view>
+  </block>
+
+  <!-- 计划 -->
+  <block wx:if="{{activeTab === 'plans'}}">
+    <view class="card">
+      <view class="section-title">切换计划</view>
+      <view class="plan-row {{item.id === activeVersion ? 'is-current' : ''}}" wx:for="{{plans}}" wx:key="id" data-id="{{item.id}}" bindtap="switchPlan">
+        <text class="plan-name">{{item.name}}</text>
+        <text class="plan-flag" wx:if="{{item.id === activeVersion}}">当前</text>
+        <text class="plan-arrow" wx:else>›</text>
+      </view>
+      <view class="hint empty" wx:if="{{!plans.length}}">暂无计划</view>
+    </view>
+    <view class="card">
+      <view class="section-title">计划管理</view>
+      <button class="btn-ghost plan-action" bindtap="promptNewPlan" disabled="{{busy}}">＋ 新建计划</button>
+      <button class="btn-ghost plan-action" bindtap="copyPlan" disabled="{{busy}}">复制当前计划</button>
+      <button class="btn-danger plan-action" bindtap="promptDeletePlan" disabled="{{busy}}">删除计划</button>
+      <button class="btn-ghost plan-action" bindtap="openExpenses" disabled="{{busy}}">¥ 行程账本</button>
+    </view>
+  </block>
+
+  <!-- 地点库 -->
+  <block wx:if="{{activeTab === 'places'}}">
+    <view class="card loc-toolbar">
+      <input class="input" placeholder="搜索地点名称或地址" value="{{locSearch}}" bindinput="onLocSearch" />
+      <scroll-view class="loc-types" scroll-x enable-flex>
+        <view class="loc-type-chip {{locType === '' ? 'is-active' : ''}}" data-type="" bindtap="onLocType">全部</view>
+        <view class="loc-type-chip {{locType === 'spot' ? 'is-active' : ''}}" data-type="spot" bindtap="onLocType">景点</view>
+        <view class="loc-type-chip {{locType === 'food' ? 'is-active' : ''}}" data-type="food" bindtap="onLocType">饮食</view>
+        <view class="loc-type-chip {{locType === 'hotel' ? 'is-active' : ''}}" data-type="hotel" bindtap="onLocType">住宿</view>
+        <view class="loc-type-chip {{locType === 'shopping' ? 'is-active' : ''}}" data-type="shopping" bindtap="onLocType">购物</view>
+        <view class="loc-type-chip {{locType === 'fuel' ? 'is-active' : ''}}" data-type="fuel" bindtap="onLocType">加油</view>
+        <view class="loc-type-chip {{locType === 'service' ? 'is-active' : ''}}" data-type="service" bindtap="onLocType">服务区</view>
+        <view class="loc-type-chip {{locType === 'supply' ? 'is-active' : ''}}" data-type="supply" bindtap="onLocType">补给</view>
+        <view class="loc-type-chip {{locType === 'geography' ? 'is-active' : ''}}" data-type="geography" bindtap="onLocType">地名</view>
+        <view class="loc-type-chip {{locType === 'flight' ? 'is-active' : ''}}" data-type="flight" bindtap="onLocType">机场</view>
+        <view class="loc-type-chip {{locType === 'transport' ? 'is-active' : ''}}" data-type="transport" bindtap="onLocType">交通</view>
+      </scroll-view>
+    </view>
+    <view class="card">
+      <block wx:if="{{filteredLocations.length}}">
+        <view class="loc-row type-{{item.type}}" wx:for="{{filteredLocations}}" wx:key="id" data-id="{{item.id}}" bindtap="openLocation">
+          <view class="loc-dot"></view>
+          <view class="loc-main">
+            <view class="loc-name">{{item.name}}</view>
+            <view class="hint">{{item.address || '暂无地址'}}</view>
+            <view class="hint" wx:if="{{item.note}}">{{item.note}}</view>
+          </view>
+          <text class="ev-arrow">›</text>
+        </view>
+      </block>
+      <view class="hint empty" wx:else>没有匹配的地点，点下方新建</view>
+    </view>
+    <button class="add-btn" bindtap="addLocation">＋ 新建地点</button>
+  </block>
+</view>

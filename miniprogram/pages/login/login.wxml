@@ -1,0 +1,27 @@
+<view class="container">
+  <view class="login-hero">
+    <view class="login-title">行远途记</view>
+    <view class="hint">自驾行程规划 · 路线 · 时间表 · 朋友协作</view>
+  </view>
+
+  <view class="card">
+    <button class="btn-primary" bindtap="wxLogin" disabled="{{busy}}">
+      {{busy ? '登录中…' : '微信一键登录'}}
+    </button>
+    <view class="divider"><text>或使用账号密码</text></view>
+
+    <view class="hint" wx:if="{{authMode === 'register'}}">注册后与 web 端账号互通，可创建和分享行程</view>
+    <input class="input" placeholder="用户名（2-20 位）" value="{{username}}" data-field="username" bindinput="onInput" />
+    <input class="input" password placeholder="密码（至少 6 位）" value="{{password}}" data-field="password" bindinput="onInput" />
+    <view class="error" wx:if="{{error}}">{{error}}</view>
+
+    <button class="btn-primary account-submit" bindtap="submitAccount" disabled="{{busy}}">
+      {{authMode === 'login' ? '登录' : '注册并登录'}}
+    </button>
+    <view class="switch-line">
+      <text class="hint" bindtap="switchMode">{{authMode === 'login' ? '没有账号？注册一个' : '已有账号？去登录'}}</text>
+    </view>
+  </view>
+
+  <view class="hint footer">数据与 web 端共用；体验版阶段请勿存放敏感信息</view>
+</view>

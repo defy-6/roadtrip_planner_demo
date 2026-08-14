@@ -1,0 +1,56 @@
+<view class="container">
+  <view class="error" wx:if="{{error}}">{{error}}</view>
+
+  <view class="card total-card">
+    <view class="hint">全程总开销</view>
+    <view class="total">¥ {{total}}</view>
+    <button class="btn-primary add-expense" bindtap="showAdd">＋ 记一笔</button>
+  </view>
+
+  <view class="card" wx:if="{{showForm}}">
+    <view class="section-title">{{editId ? '编辑账目' : '记一笔'}}</view>
+    <view class="field">
+      <text class="field-label">日期</text>
+      <picker mode="date" value="{{form.date}}" bindchange="onDateChange">
+        <view class="picker-value">{{form.date}}</view>
+      </picker>
+    </view>
+    <view class="field">
+      <text class="field-label">类别</text>
+      <picker range="{{categories}}" value="{{categoryIndex}}" bindchange="onCategoryChange">
+        <view class="picker-value">{{form.category}}</view>
+      </picker>
+    </view>
+    <view class="field">
+      <text class="field-label">说明</text>
+      <input class="input" placeholder="例如：晚餐 / 停车费" value="{{form.note}}" data-field="note" bindinput="onInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">金额（元）</text>
+      <input class="input" type="digit" placeholder="0.00" value="{{form.amount}}" data-field="amount" bindinput="onInput" />
+    </view>
+    <view class="form-actions">
+      <button class="btn-ghost" bindtap="cancelForm">取消</button>
+      <button class="btn-primary" bindtap="save" disabled="{{saving}}">{{saving ? '保存中…' : '保存'}}</button>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{groups.length}}">
+    <view class="expense-day" wx:for="{{groups}}" wx:key="date">
+      <view class="expense-day-head">
+        <text class="section-title">{{item.date}}</text>
+        <text class="expense-day-total">¥ {{item.total}}</text>
+      </view>
+      <view class="expense-row" wx:for="{{item.items}}" wx:for-item="exp" wx:key="id">
+        <view class="exp-main">
+          <view class="exp-note">{{exp.note}}</view>
+          <view class="hint">{{exp.category}}</view>
+        </view>
+        <text class="exp-amount">¥ {{exp.amount}}</text>
+        <text class="exp-edit" data-id="{{exp.id}}" bindtap="edit">编辑</text>
+        <text class="exp-del" data-id="{{exp.id}}" bindtap="remove">删除</text>
+      </view>
+    </view>
+  </view>
+  <view class="hint empty" wx:if="{{!groups.length && !showForm}}">还没有开销记录，点「记一笔」开始记账</view>
+</view>

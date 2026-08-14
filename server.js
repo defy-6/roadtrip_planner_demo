@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import cloudApi from './cloudfunctions/api/index.js';
 
 dotenv.config();
 const app = express();
@@ -11,7 +12,11 @@ const cacheDir = path.join(root, '.cache');
 const cacheFile = path.join(cacheDir, 'amap-responses.json');
 const weatherCacheFile = path.join(cacheDir, 'weather-responses.json');
 const dataDir = path.join(root, 'data');
-const plannerDataFile = path.join(dataDir, 'roadtrip-data.json');
+// 浏览器回归测试可指向临时副本，避免改写正式行程。
+const plannerDataFile = process.env.PLANNER_DATA_FILE
+  ? path.resolve(root, process.env.PLANNER_DATA_FILE)
+  : path.join(dataDir, 'roadtrip-data.json');
+const plannerDataDir = path.dirname(plannerDataFile);
 let amapCache = {};
 try { amapCache = JSON.parse(await readFile(cacheFile, 'utf8')); } catch { /* 首次启动尚无缓存 */ }
 let weatherCache = {};
@@ -33,7 +38,47 @@ const saveWeatherCache = () => {
   return weatherCacheWrite;
 };
 app.use(express.json({ limit: '25mb' }));
+const serverPort = Number(process.env.PORT || 3000);
+const localPreviewMode = process.env.PREVIEW_MODE || (serverPort === 3001 ? 'mobile' : 'desktop');
+// 本地开发始终使用最新 HTML/JS/CSS；避免 Safari 复用旧模块后再用旧状态覆盖本地文件。
+app.use((_req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+app.get('/', (req, res) => {
+  if (localPreviewMode !== 'mobile' || req.query.raw === '1') {
+    res.sendFile(path.join(root, 'public', 'index.html'));
+    return;
+  }
+  res.sendFile(path.join(root, 'public', 'local-preview.html'));
+});
 app.use(express.static(path.join(root, 'public')));
+
+// 本地联调：账号/行程云函数路由与现有服务同端口（/api/auth/*、/api/trips/*）。
+// 云函数本地模式数据落在 work/cloud-dev.json；云端部署时此段不参与。
+process.env.LOCAL = '1';
+const cloudRouter = cloudApi.createRouter({
+  store: cloudApi.createStore(),
+  amapKey: process.env.AMAP_WEB_SERVICE_KEY,
+  qweatherKey: process.env.QWEATHER_API_KEY,
+});
+app.use('/api', async (req, res, next) => {
+  const p = req.path;
+  if (p !== '/auth' && p !== '/trips' && !p.startsWith('/auth/') && !p.startsWith('/trips/')) return next();
+  try {
+    const result = await cloudRouter({
+      method: req.method,
+      path: `/api${req.path}`,
+      headers: req.headers,
+      body: req.body || {},
+    });
+    res.status(result.statusCode).json(JSON.parse(result.body));
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 const key = process.env.AMAP_WEB_SERVICE_KEY;
 const qweatherKey = process.env.QWEATHER_API_KEY;
@@ -52,6 +97,22 @@ const amap = async (endpoint, params, { withMeta = false } = {}) => {
   if (!res.ok) throw new Error(`高德服务响应 ${res.status}`);
   const data = await res.json();
   if (data.status !== '1') throw new Error(data.info || '高德服务请求失败');
+  // 同一点位只保留最新响应：写入新条目时清掉该点位的旧条目（不同策略/参数的旧查询不再累积）。
+  const cachePointKey = (ep, p) => {
+    if (ep.includes('/direction/')) return `route:${ep}:${p.origin || ''}|${p.destination || ''}|${p.waypoints || ''}`;
+    if (ep === '/v3/place/text' || ep === '/v3/geocode/geo') return `geo:${ep}:${p.keywords || p.address || ''}|${p.city || ''}`;
+    if (ep === '/v5/place/text') return `place:${p.keywords || ''}|${p.region || ''}`;
+    return null;
+  };
+  const pointKey = cachePointKey(endpoint, params);
+  if (pointKey) {
+    for (const existing of Object.keys(amapCache)) {
+      if (existing === cacheKey) continue;
+      const [existingEndpoint, queryString] = existing.split('?');
+      const existingParams = Object.fromEntries(new URLSearchParams(queryString || ''));
+      if (cachePointKey(existingEndpoint, existingParams) === pointKey) delete amapCache[existing];
+    }
+  }
   amapCache[cacheKey] = data;
   await saveCache();
   return withMeta ? { data, cached: false } : data;
@@ -247,16 +308,32 @@ app.get('/api/planner-data', async (req, res) => {
 });
 app.put('/api/planner-data', async (req, res) => {
   try {
-    const data = { ...req.body, savedAt: new Date().toISOString() };
-    plannerDataWrite = plannerDataWrite.then(async () => {
-      await mkdir(dataDir, { recursive: true });
+    if (localPreviewMode === 'mobile') {
+      res.status(403).json({ error: '手机预览为只读模式，请在桌面端修改行程' });
+      return;
+    }
+    const { baseUpdatedAt, ...payload } = req.body || {};
+    const savedAt = new Date().toISOString();
+    const data = { ...payload, updatedAt: savedAt, savedAt };
+    const writeTask = plannerDataWrite.then(async () => {
+      let current = null;
+      try { current = JSON.parse(await readFile(plannerDataFile, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (current?.updatedAt && (!baseUpdatedAt || baseUpdatedAt !== current.updatedAt)) {
+        const conflict = new Error('本地行程已被更新，请刷新页面后再保存');
+        conflict.statusCode = 409;
+        throw conflict;
+      }
+      await mkdir(plannerDataDir, { recursive: true });
       const temporaryFile = `${plannerDataFile}.tmp`;
       await writeFile(temporaryFile, JSON.stringify(data, null, 2), 'utf8');
       await rename(temporaryFile, plannerDataFile);
     });
-    await plannerDataWrite;
-    res.json({ ok: true, savedAt: data.savedAt });
-  } catch { res.status(500).json({ error: '无法写入本地行程文件' }); }
+    plannerDataWrite = writeTask.catch(() => {});
+    await writeTask;
+    res.json({ ok: true, savedAt: data.savedAt, updatedAt: data.updatedAt });
+  } catch (error) { res.status(error.statusCode || 500).json({ error: error.message || '无法写入本地行程文件' }); }
 });
 
-app.listen(process.env.PORT || 3000, () => console.log(`Roadtrip planner: http://localhost:${process.env.PORT || 3000}`));
+app.get('/api/preview-mode', (_req, res) => res.json({ mode: localPreviewMode }));
+
+app.listen(serverPort, () => console.log(`Roadtrip planner (${localPreviewMode}): http://localhost:${serverPort}`));

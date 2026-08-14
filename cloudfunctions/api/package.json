@@ -1,0 +1,10 @@
+{
+  "name": "roadtrip-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "行远途记后端云函数：账号、行程、分享协作（wx-server-sdk 云数据库）",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

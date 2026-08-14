@@ -46,8 +46,11 @@ const indexPath = resolve(outputDir, 'index.html');
 let index = await readFile(indexPath, 'utf8');
 index = index
   .replaceAll('href="/', 'href="./')
-  .replaceAll('src="/', 'src="./')
-  .replace('<script type="module" src="./app.js"></script>', '<script src="./share-config.js"></script><script type="module" src="./app.js"></script>');
+  .replaceAll('src="/', 'src="./');
+
+const appScriptPattern = /<script type="module" src="\.\/app\.js([^\"]*)"><\/script>/;
+if (!appScriptPattern.test(index)) throw new Error('未找到 app.js 入口，无法注入共享模式数据。');
+index = index.replace(appScriptPattern, '<script src="./share-config.js"></script><script type="module" src="./app.js$1"></script>');
 await writeFile(indexPath, index, 'utf8');
 
 console.log(`已构建只读共享页：docs（数据更新时间：${updatedAt}）`);

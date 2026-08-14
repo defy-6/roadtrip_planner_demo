@@ -5,12 +5,26 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch server.js",
+    "dev:desktop": "PREVIEW_MODE=desktop PORT=3000 node --watch server.js",
+    "dev:mobile": "PREVIEW_MODE=mobile PORT=3001 node --watch server.js",
     "start": "node server.js",
     "lint": "node scripts/lint.mjs",
     "check:syntax": "node scripts/check-syntax.mjs",
-    "test": "node scripts/smoke-test.mjs",
+    "test:architecture": "node scripts/architecture-test.mjs",
+    "test:api": "node --test tests/api.test.mjs",
+    "test:e2e": "playwright test",
+    "test:unit": "node --test tests/*.test.mjs",
+    "verify:data": "node scripts/verify-data-hash.mjs",
+    "test": "npm run test:architecture && npm run test:unit",
     "check": "npm run lint && npm run check:syntax && npm test",
-    "build:share": "npm run check:syntax && node scripts/build-share.mjs"
+    "check:publish": "npm run build:share && npm run test:e2e",
+    "build:share": "npm run check && node scripts/build-share.mjs"
   },
-  "dependencies": { "dotenv": "^16.4.7", "express": "^4.21.2" }
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
 }

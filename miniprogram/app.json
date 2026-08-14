@@ -1,0 +1,19 @@
+{
+  "pages": [
+    "pages/trips/trips",
+    "pages/login/login",
+    "pages/trip/trip",
+    "pages/event-edit/event-edit",
+    "pages/location-edit/location-edit",
+    "pages/expense/expense"
+  ],
+  "window": {
+    "navigationBarTitleText": "行远途记",
+    "navigationBarBackgroundColor": "#f7f8fa",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f7f8fa"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

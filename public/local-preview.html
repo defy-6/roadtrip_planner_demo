@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>行远 · 本地预览</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; min-height: 100%; margin: 0; background: #e8ece8; }
+    body { overflow: auto; }
+    .stage { min-width: 100%; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; }
+    iframe { display: block; border: 0; background: #f4f1ea; }
+    body.mobile .stage { padding: 14px; }
+    body.mobile iframe { width: 393px; height: min(852px, calc(100vh - 28px)); min-height: 720px; border-radius: 28px; box-shadow: 0 12px 38px #183c2a30; }
+    .mode-badge { position: fixed; right: 10px; bottom: 10px; z-index: 2; padding: 5px 9px; border-radius: 999px; background: #173c32dc; color: white; font-size: 11px; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <main class="stage"><iframe src="/index.html" title="行远预览"></iframe></main>
+  <span class="mode-badge" aria-live="polite">正在识别预览模式…</span>
+  <script>
+    fetch('/api/preview-mode')
+      .then(response => response.json())
+      .then(({ mode }) => {
+        document.body.className = 'mobile';
+        document.querySelector('.mode-badge').textContent = mode === 'mobile' ? '手机预览 · 393×852' : '本地预览';
+      })
+      .catch(() => {
+        document.body.className = 'mobile';
+        document.querySelector('.mode-badge').textContent = '本地预览';
+      });
+  </script>
+</body>
+</html>

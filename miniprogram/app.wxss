@@ -1,0 +1,70 @@
+/* 行远途记 · 全局样式（朴素占位，设计稿落地后替换） */
+page {
+  background: #f7f8fa;
+  color: #1f2733;
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+
+.container {
+  padding: 24rpx;
+}
+
+.card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 8rpx rgba(31, 39, 51, 0.06);
+}
+
+.btn-primary {
+  background: #2f73a9;
+  color: #fff;
+  border-radius: 12rpx;
+  font-size: 30rpx;
+  padding: 20rpx 0;
+  text-align: center;
+}
+
+.btn-ghost {
+  background: #fff;
+  color: #2f73a9;
+  border: 1rpx solid #b9c4d1;
+  border-radius: 12rpx;
+  font-size: 30rpx;
+  padding: 18rpx 0;
+  text-align: center;
+}
+
+.btn-danger {
+  background: #fff;
+  color: #c0392b;
+  border: 1rpx solid #e3a8a1;
+  border-radius: 12rpx;
+  font-size: 30rpx;
+  padding: 18rpx 0;
+  text-align: center;
+}
+
+.input {
+  border: 1rpx solid #d6d9de;
+  border-radius: 12rpx;
+  padding: 18rpx 20rpx;
+  background: #fff;
+  margin: 12rpx 0;
+}
+
+.hint {
+  color: #8892a0;
+  font-size: 24rpx;
+}
+
+.error {
+  color: #c0392b;
+  background: #fdecea;
+  border: 1rpx solid #f5c6c0;
+  border-radius: 12rpx;
+  padding: 16rpx 20rpx;
+  margin: 12rpx 0;
+}

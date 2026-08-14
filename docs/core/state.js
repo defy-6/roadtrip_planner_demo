@@ -25,5 +25,5 @@ export const initialPlannerState = {
 
 // 兼容第一阶段运行时：后续 feature 会逐步改为通过 createStore 的 action 更新。
 export function createRuntimePlannerState() {
-  return { items: [], dragging: null, schedule: [], locations: [], universalLocations: [], routes: [], placeCategories: [], versionKey: 'xinjiang-roadtrip', plans: [], preferences: { pace: '适中', vehicle: '自驾', buffer: '30' }, dayFilter: '', selectedIndex: null };
+  return { items: [], dragging: null, schedule: [], expenses: [], locations: [], universalLocations: [], routes: [], placeCategories: [], versionKey: 'xinjiang-roadtrip', plans: [], preferences: { pace: '适中', vehicle: '自驾', buffer: '30' }, dayFilter: '', selectedIndex: null };
 }

@@ -1,0 +1,7 @@
+.login-hero { text-align: center; padding: 80rpx 0 40rpx; }
+.login-title { font-size: 48rpx; font-weight: 600; color: #1f2733; }
+.divider { display: flex; align-items: center; color: #8892a0; font-size: 24rpx; margin: 28rpx 0 8rpx; }
+.divider::before, .divider::after { content: ''; flex: 1; height: 1rpx; background: #e3e6ea; margin: 0 16rpx; }
+.account-submit { margin-top: 20rpx; }
+.switch-line { text-align: center; margin-top: 24rpx; }
+.footer { text-align: center; margin-top: 60rpx; }

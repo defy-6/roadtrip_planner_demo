@@ -1,0 +1,15 @@
+@media(max-width:980px){
+html[data-preview-mode="mobile"] .mobile-date-strip{display:grid;gap:8px;padding:8px 0 10px;border-bottom:1px solid var(--mobile-line)}
+html[data-preview-mode="mobile"] .mobile-calendar-head{display:grid;align-items:center}html[data-preview-mode="mobile"] .mobile-calendar-head b{text-align:center;font-size:12px}
+html[data-preview-mode="mobile"] .mobile-weekdays{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;scroll-snap-type:x proximity;scrollbar-width:none}html[data-preview-mode="mobile"] .mobile-weekdays button{flex:0 0 44px;height:54px;padding:5px 0;border:0;border-radius:999px;background:transparent;color:#4d5651;scroll-snap-align:center}html[data-preview-mode="mobile"] .mobile-weekdays small,html[data-preview-mode="mobile"] .mobile-weekdays b{display:block}html[data-preview-mode="mobile"] .mobile-weekdays small{font-size:10px}html[data-preview-mode="mobile"] .mobile-weekdays b{margin-top:5px;font-size:14px}html[data-preview-mode="mobile"] .mobile-weekdays button.is-selected{background:var(--mobile-green);color:#fff}
+html[data-preview-mode="mobile"] .mobile-view-switch{justify-self:end;display:grid;grid-template-columns:1fr 1fr;width:142px;padding:3px;border-radius:10px;background:#eff0ec}html[data-preview-mode="mobile"] .mobile-view-switch button{height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:#59615d;font-size:12px}html[data-preview-mode="mobile"] .mobile-view-switch button.is-selected{background:var(--mobile-green);color:#fff}
+html[data-preview-mode="mobile"] .calendar-grid{--calendar-height:640px!important}html[data-preview-mode="mobile"] .time-rail,html[data-preview-mode="mobile"] .calendar-day{height:640px!important}html[data-preview-mode="mobile"] .time-label{height:40px!important}html[data-preview-mode="mobile"] .calendar-day{background-image:repeating-linear-gradient(to bottom,transparent 0,transparent 39px,var(--mobile-line) 40px)!important}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .schedule-scroll{padding-bottom:126px!important;scroll-padding-bottom:126px!important}html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] #addScheduleBtn{bottom:88px!important}
+}
+@media(max-width:980px){
+html[data-preview-mode="mobile"] .mobile-date-strip{grid-template-columns:minmax(0,1fr) 118px!important;gap:7px!important;padding:5px 0 7px!important}
+html[data-preview-mode="mobile"] .mobile-calendar-head{display:none!important}
+html[data-preview-mode="mobile"] .mobile-weekdays{gap:3px!important;padding:0!important}
+html[data-preview-mode="mobile"] .mobile-weekdays button{flex-basis:39px!important;height:44px!important;padding:3px 0!important}
+html[data-preview-mode="mobile"] .mobile-view-switch{align-self:center!important;width:118px!important}
+}

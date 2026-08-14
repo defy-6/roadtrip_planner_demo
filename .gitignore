@@ -3,3 +3,8 @@ node_modules/
 .cache/
 data/roadtrip-data.json
 data/roadtrip-data.json.tmp
+work/cloud-dev.json
+work/cloud-api-test.json
+.DS_Store
+test-results/
+playwright-report/
