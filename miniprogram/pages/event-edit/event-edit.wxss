@@ -9,4 +9,18 @@
 .type-badge.type-flight, .type-badge.type-hotel { color: #9168b0; }
 .input { border: 1rpx solid #d6d9de; border-radius: 12rpx; padding: 18rpx 20rpx; background: #fff; }
 .textarea { min-height: 140rpx; }
+.route-result {
+  margin-top: 12rpx; padding: 14rpx 18rpx; border-radius: 10rpx;
+  background: #eef6f0; color: #075b43; font-size: 26rpx; font-weight: 600;
+}
+.price-box { border: 1rpx solid #e3e6ea; border-radius: 12rpx; padding: 16rpx 18rpx; margin-top: 8rpx; }
+.price-title { font-size: 26rpx; font-weight: 700; color: #075b43; margin-bottom: 8rpx; }
+.price-item { display: flex; align-items: center; gap: 8rpx; margin-bottom: 10rpx; }
+.price-kind { font-size: 22rpx; color: #075b43; flex: 0 0 auto; }
+.price-note { flex: 1; }
+.price-amount { width: 130rpx; flex: 0 0 auto; }
+.price-count { width: 90rpx; flex: 0 0 auto; }
+.price-del { color: #c0392b; font-size: 28rpx; padding: 8rpx; }
+.price-add { margin-top: 4rpx; font-size: 24rpx; }
+.wp-pick { margin-top: 8rpx; font-size: 24rpx; color: #2f73a9; }
 .actions { display: grid; grid-template-columns: 1fr 2fr; gap: 20rpx; margin-top: 24rpx; }

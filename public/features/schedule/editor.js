@@ -1,5 +1,6 @@
 // 事件编辑器：打开/保存/删除时刻表事件，维护路线、航班、天气与费用字段。
 // 地点新增(confirmNewPlace)、费用表单(costEditor)、天气查询(queryEventWeather)均由 runtime 注入。
+import { localToday } from '../../core/utils.js';
 export function createScheduleEditor({
   state, $, escapeHtml, itemsEl, values,
   elements: { editorDeleteButton, routeEditorSection, flightFields, eventLocationField, weatherFields },
@@ -33,13 +34,15 @@ export function createScheduleEditor({
   }
 
   function updateEditorFieldVisibility() {
-    const type = $('#editorType').value, isDrive = type === 'drive', isFlight = type === 'flight';
+    const type = $('#editorType').value, isDrive = type === 'drive', isFlight = type === 'flight', isNew = editingNewEvent === true;
     routeEditorSection.hidden = !isDrive;
-    if (isDrive) routeEditorSection.open = true;
+    // 路线设置默认收起，避免每次打开驾驶事件都展开一大片起终点/途经点字段；
+    // 仅在"新增驾驶事件"时自动展开一次(用户需填起终点)，编辑已有路线时保持折叠。
+    if (isDrive && isNew) routeEditorSection.open = true;
     flightFields.hidden = !isFlight;
     eventLocationField.hidden = isDrive || isFlight;
     weatherFields.hidden = false;
-    $('#editorAddress').closest('label').hidden = isFlight;
+    $("#editorAddress").closest("label").hidden = isFlight || isDrive;
     if (!isDrive) pendingEditorRoute = null;
   }
 
@@ -105,13 +108,52 @@ export function createScheduleEditor({
   function bindLocationSearch(inputId, selectId, places = state.locations, onPick = null) {
     const input = $(`#${inputId}`), select = $(`#${selectId}`); if (!input || !select) return;
     const syncInput = () => { const place = places.find(item => item.id === select.value); input.value = place ? `${place.name || ''}${place.address ? ` · ${place.address}` : ''}` : ''; if (place) onPick?.(place); };
+    const matchPlace = query => {
+      if (!query) return null;
+      const q = query.toLowerCase();
+      // 包含(子串)匹配：输入部分名称/地址即可命中，无需逐字删空再重新输入
+      return places.find(item => {
+        const label = `${item.name || ''} · ${item.address || ''}`.toLowerCase();
+        return label === q || label.includes(q) || String(item.name || '').toLowerCase().includes(q) || String(item.address || '').toLowerCase().includes(q);
+      }) || null;
+    };
+    // 点进输入框时若已有选中地点，全选文本便于直接覆盖为新的搜索词（无需逐字删除）。
+    input.addEventListener('focus', () => { if (select.value && input.value) { try { input.select(); } catch { /* 忽略 */ } } });
     input.oninput = () => {
-      const query = input.value.trim().toLowerCase(); if (!query) { select.value = ''; return; }
-      const place = places.find(item => { const label = `${item.name || ''} · ${item.address || ''}`.toLowerCase(); return label === query || (item.name || '').toLowerCase() === query || (item.address || '').toLowerCase() === query; });
+      const query = input.value.trim(); if (!query) { select.value = ''; return; }
+      const place = matchPlace(query);
       if (place) { select.value = place.id; onPick?.(place); }
     };
-    input.onchange = () => { const query = input.value.trim().toLowerCase(); const place = places.find(item => `${item.name || ''} · ${item.address || ''}`.toLowerCase() === query || (item.name || '').toLowerCase() === query || (item.address || '').toLowerCase() === query); if (place) { select.value = place.id; onPick?.(place); } else if (!query) select.value = ''; syncInput(); };
+    input.onchange = () => {
+      const text = input.value.trim();
+      if (!text) { select.value = ''; return; }
+      const place = matchPlace(text);
+      if (place) { select.value = place.id; onPick?.(place); } else { select.value = ''; }
+    };
     syncInput();
+  }
+
+  // 路线起终点二选一：用了地点库搜索(选定 place)就隐藏自定义起/终点，填了自定义就清回搜索。
+  let routeCustomBound = false;
+  function bindRouteCustomToggle() {
+    const originSearch = $('#routeOriginSearch'), destSearch = $('#routeDestinationSearch');
+    const originSel = $('#routeOrigin'), destSel = $('#routeDestination');
+    const originCustom = $('#routeCustomOriginField'), destCustom = $('#routeCustomDestinationField');
+    const originNames = ['routeOriginName', 'routeOriginAddress'], destNames = ['routeDestinationName', 'routeDestinationAddress'];
+    const refreshNow = () => {
+      if (originCustom) originCustom.hidden = Boolean(originSel?.value);
+      if (destCustom) destCustom.hidden = Boolean(destSel?.value);
+    };
+    if (!routeCustomBound && originSearch) {
+      routeCustomBound = true;
+      [originSearch, originSel, destSearch, destSel].forEach(el => {
+        el?.addEventListener('input', refreshNow);
+        el?.addEventListener('change', refreshNow);
+      });
+      originNames.forEach(id => { const el = $('#' + id); el?.addEventListener('input', () => { if (el.value.trim() && originSel) { originSel.value = ''; if (originSearch) originSearch.value = ''; } refreshNow(); }); });
+      destNames.forEach(id => { const el = $('#' + id); el?.addEventListener('input', () => { if (el.value.trim() && destSel) { destSel.value = ''; if (destSearch) destSearch.value = ''; } refreshNow(); }); });
+    }
+    refreshNow();
   }
 
   function openScheduleEditor(index, isNew = false) {
@@ -140,9 +182,23 @@ export function createScheduleEditor({
     $('#editorFlightStopoverAirport').value = flight.stopoverAirport || ''; $('#editorFlightStopoverArrivalTime').value = flight.stopoverArrivalTime || ''; $('#editorFlightStopoverDepartureTime').value = flight.stopoverDepartureTime || '';
     updateEditorFieldVisibility();
     updateRouteTransportModeUi();
+    bindRouteCustomToggle(); // value 已设置后再刷新自定义起终点的显隐
     updateEditorRouteQueryState(sharedRoute);
     updateEditorWeatherState(entry);
     $('#eventEditor').showModal();
+    // 避免浏览器/iOS 把焦点默认交给 dialog 内第一个可聚焦控件（#editorDate，type=date，
+    // 会立即弹日期滚轮 + 放大页面）。dialog 已加 tabindex="-1" 使其真正可聚焦。
+    // iOS 上 showModal 的原生聚焦发生在渲染前，仅靠 rAF 不够，需同步 + 双定时器兜底，
+    // 强制把焦点从 date 输入上移开（用户点哪个字段才弹哪个）。
+    const moveFocusAway = () => {
+      try {
+        $('#eventEditor').focus({ preventScroll: true });
+        if (document.activeElement?.type === 'date') $('#eventEditor').blur();
+      } catch { /* focus 异常忽略 */ }
+    };
+    moveFocusAway();
+    requestAnimationFrame(moveFocusAway);
+    setTimeout(moveFocusAway, 40);
   }
 
   function cancelScheduleEditor() {
@@ -190,7 +246,7 @@ export function createScheduleEditor({
   $('#editorCancel').onclick = cancelScheduleEditor;
   editorDeleteButton.onclick = () => deleteScheduleEvent(editingScheduleIndex);
   $('#eventEditor').oncancel = event => { event.preventDefault(); cancelScheduleEditor(); };
-  $('#editorType').onchange = updateEditorFieldVisibility;
+  $('#editorType').onchange = () => { updateEditorFieldVisibility(); updateRouteTransportModeUi(); bindRouteCustomToggle(); };
   $('#routeTransportMode').onchange = updateRouteTransportModeUi;
   $('#queryEditorWeather').onclick = () => queryEventWeather(editingScheduleIndex);
   $('#routeLibrarySelect').onchange = event => {
@@ -205,6 +261,28 @@ export function createScheduleEditor({
     [...$('#routeWaypoints').options].forEach(option => { option.selected = editorWaypointOrder.includes(option.value); }); renderWaypointOrder();
     updateRouteTransportModeUi();
     updateEditorRouteQueryState(route);
+  };
+  // 新建地点并关联：打开地点编辑器建新地点，保存后把当前事件切到该新地点。
+  // 用户无需手工清空/重选旧关联即可"换新"。
+  $('#createNewLinkedPlace').onclick = async event => {
+    const index = editingScheduleIndex, entry = state.schedule[index]; if (!entry || ['drive', 'flight'].includes($('#editorType').value)) return;
+    const button = event.currentTarget; button.disabled = true; button.textContent = '打开地点编辑器…';
+    try {
+      const place = await confirmNewPlace({ type: $('#editorType').value, name: $('#editorName').value.trim(), address: $('#editorAddress').value.trim(), note: $('#editorNote').value.trim(), fromEvent: true });
+      if (place) {
+        // 把当前事件关联到新地点，并同步名称/地址/搜索框
+        entry.locationId = place.id; entry.address = '';
+        if (![...$('#eventLocation').options].some(option => option.value === place.id)) $('#eventLocation').append(new Option(`${placeTypeName(place.type)} · ${place.name}`, place.id));
+        $('#eventLocation').value = place.id;
+        const search = $('#eventLocationSearch'); if (search) search.value = `${place.name || ''}${place.address ? ` · ${place.address}` : ''}`;
+        $('#editorName').value = place.name || $('#editorName').value;
+        $('#editorAddress').value = place.address || '';
+        save(); renderLocations(); renderSchedule(state.schedule); updateNodeFromSchedule(index); focusScheduleEvent(index);
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      window.alert(error.message || '新建地点失败，请重试。');
+    } finally { button.disabled = false; button.textContent = '新建地点并关联'; }
   };
   $('#resolveEditorPlace').onclick = async event => {
     const index = editingScheduleIndex, entry = state.schedule[index]; if (!entry || ['drive', 'flight'].includes($('#editorType').value)) return;
@@ -316,7 +394,8 @@ export function createScheduleEditor({
     focusScheduleEvent(index); await showDayOverview(state.dayFilter);
   };
   $('#addScheduleBtn').onclick = () => {
-    const date = state.dayFilter || state.schedule[0]?.date || '2026-08-15';
+    // 默认日期：优先当前筛选日期，否则用今天（真实日期），不再回退行程首日/写死日期。
+    const date = state.dayFilter || localToday();
     const entry = { date, start: '09:00', end: '10:00', title: '新安排', detail: '', address: '', type: 'spot', ...(date < '2026-08-20' ? { sharedId: `shared-new-${crypto.randomUUID()}` } : {}) };
     const index = state.schedule.length; state.schedule.push(entry);
     addItem({ type: entry.type, date: entry.date, startTime: entry.start, endTime: entry.end, name: entry.title, address: '', note: '', scheduleIndex: index });

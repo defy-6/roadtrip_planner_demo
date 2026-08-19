@@ -16,6 +16,7 @@ Page({
     types: TYPES,
     typeIndex: 0,
     form: { type: 'spot', name: '', address: '', note: '' },
+    poiSummary: null,
     saving: false,
     error: '',
   },
@@ -29,14 +30,28 @@ Page({
 
   async load() {
     try {
-      const res = await request(`/api/trips/${this.data.id}/locations`);
-      this.locations = res.locations || [];
+      const [locRes, catRes] = await Promise.all([
+        request(`/api/trips/${this.data.id}/locations`),
+        request(`/api/trips/${this.data.id}/categories`),
+      ]);
+      this.locations = locRes.locations || [];
+      const custom = (catRes.categories || []).map(c => ({ value: c.id, label: c.name }));
+      const allTypes = [...TYPES, ...custom];
+      this.setData({ types: allTypes });
       if (!this.data.isNew) {
         const loc = this.locations.find(l => l.id === this.data.locationId);
         if (loc) {
-          const typeIndex = Math.max(0, TYPES.findIndex(t => t.value === loc.type));
+          const typeIndex = Math.max(0, allTypes.findIndex(t => t.value === loc.type));
+          const pd = loc.poiDetails;
           this.setData({
             typeIndex,
+            poiSummary: pd && (pd.openTime || pd.rating || pd.referenceCost || pd.tags) ? {
+              openTime: pd.openTime || '',
+              rating: pd.rating || '',
+              referenceCost: pd.referenceCost || '',
+              ticketPrice: pd.ticketPrice || '',
+              tags: pd.tags || '',
+            } : null,
             form: { type: loc.type || 'spot', name: loc.name || '', address: loc.address || '', note: loc.note || '' },
           });
         }
@@ -52,7 +67,7 @@ Page({
 
   onTypeChange(e) {
     const i = Number(e.detail.value);
-    this.setData({ typeIndex: i, 'form.type': TYPES[i].value });
+    this.setData({ typeIndex: i, 'form.type': this.data.types[i].value });
   },
 
   async save() {

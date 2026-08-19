@@ -26,7 +26,7 @@ import { flightPlaces as resolveFlightPlaces } from './flights/model.js';
 import { createCostEditor } from './costs/editor.js';
 import { normalizedPriceItems } from './costs/model.js';
 import { createExpenseLedger } from './costs/ledger.js';
-import { bindScheduleDragDrop } from './schedule/drag-resize.js';
+import { bindScheduleDragDrop, bindScheduleTouchDrag } from './schedule/drag-resize.js';
 import { createScheduleView } from './schedule/view.js';
 import { createScheduleFocus } from './schedule/focus.js';
 import { createScheduleEditor } from './schedule/editor.js';
@@ -359,6 +359,15 @@ bindScheduleDragDrop({
   setSelectionAnchor,
   suppressClick
 });
+// 移动端触屏批量拖动：长按已选事件后拖动整组（HTML5 DnD 触屏无效，故用 pointer 实现）
+bindScheduleTouchDrag({
+  state, schedule: $('#schedule'), isReadOnly: () => isShareMode, selectedIndexes: selectedScheduleIndexes,
+  clockToMinute, minuteToClock, getHourHeight: scheduleHourHeight, snapDrop: snapScheduleDrop,
+  updateNode: updateNodeFromSchedule, save: () => save(),
+  renderSchedule: () => renderSchedule(state.schedule), applyDayFilter,
+  showDayOverview: () => showDayOverview(state.dayFilter),
+  suppressClick
+});
 bindFlightImporter({
   $, state, clockToMinute, linkFlightAirports, addItem,
   renderSchedule, applyDayFilter, save, renderLocations, focusScheduleEvent
@@ -388,6 +397,20 @@ createPlanDialog({
 const placeEditorFeature = createPlaceEditor({ state, $, api, geocode, placeTypeOptionsHtml, getDefaultType: () => placeTypeFilter, findMatchingLocation, importUniversalPlace, normalizePlaceLookup, removeLocations, save, renderLocations });
 const confirmNewPlace = placeEditorFeature.confirmNewPlace;
 const openPlaceEditor = placeEditorFeature.openPlaceEditor;
+// 补绑定：新增地点 / 新增类别（此前仅创建按钮未接线）
+addPlaceButton.onclick = () => openPlaceEditor(null);
+addPlaceCategoryButton.onclick = () => placeCategoryEditor.showModal();
+$('#placeCategoryEditorForm').onsubmit = event => {
+  event.preventDefault();
+  const name = $('#newPlaceCategoryName').value.trim();
+  const color = $('#newPlaceCategoryColor').value;
+  if (!name) return;
+  state.placeCategories = state.placeCategories || [];
+  if (!state.placeCategories.some(c => c.name === name)) state.placeCategories.push({ id: crypto.randomUUID(), name, color });
+  save(); renderLocations();
+  placeCategoryEditor.close();
+};
+$('#placeCategoryEditorCancel').onclick = () => placeCategoryEditor.close();
 const weatherController = createWeatherController({
   state, $, api, geocode, convertCoords: gcjToWgs, routeForEvent: routeForScheduleEvent,
   getEditingIndex: () => scheduleEditorFeature.getEditingIndex(), save,
@@ -467,18 +490,22 @@ window.addEventListener('mobile:viewchange', event => {
   setTimeout(async () => { map?.invalidateSize(); await showDayOverview($('#mapDayFilter').value || ''); }, 80);
 });
 window.addEventListener('mobile:mapaction', async event => {
-  if (!map) return;
-  if (event.detail?.action === 'layers') {
+  const action = event.detail?.action;
+  if (action === 'layers') {
+    if (!map) { window.showSaveToast?.('地图尚未就绪，请稍后再试'); return; }
     const label = cycleBaseLayer();
     window.dispatchEvent(new CustomEvent('mobile:maplayerchanged', { detail: { label } }));
     return;
   }
-  if (event.detail?.action === 'fit') {
+  if (action === 'fit') {
+    if (!map) { window.showSaveToast?.('地图尚未就绪，请稍后再试'); return; }
     await clearMapSelection();
     fitOverview();
     return;
   }
-  if (event.detail?.action === 'locate' && navigator.geolocation) {
+  if (action === 'locate') {
+    if (!map) { window.showSaveToast?.('地图尚未就绪，请稍后再试'); return; }
+    if (!navigator.geolocation) { window.showSaveToast?.('当前浏览器不支持定位'); return; }
     navigator.geolocation.getCurrentPosition(position => {
       const latLng = [position.coords.latitude, position.coords.longitude];
       if (currentLocationLayer) map.removeLayer(currentLocationLayer);
@@ -497,7 +524,8 @@ window.addEventListener('mobile:mapaction', async event => {
         })
       }).bindPopup(`<b>我的当前位置</b><br><small>定位精度约 ${Math.round(position.coords.accuracy || 0)} 米</small>`).addTo(currentLocationLayer);
       map.setView(latLng, Math.max(map.getZoom(), 14), { animate: true });
-    }, () => { $('#routeError').textContent = '无法获取当前位置，请检查浏览器定位权限。'; }, { enableHighAccuracy: true, timeout: 8000 });
+      window.showSaveToast?.('已定位到当前位置');
+    }, () => { window.showSaveToast?.('无法获取当前位置，请检查浏览器定位权限。'); }, { enableHighAccuracy: true, timeout: 8000 });
   }
 });
 window.addEventListener('mobile:routefocus', event => {
@@ -512,6 +540,22 @@ window.addEventListener('mobile:triprename', event => {
   save();
   const tripId = api.getActiveTripId?.();
   if (tripId) api.updateTrip(tripId, { name }).catch(() => {});
+});
+// 移动端手动保存：触发保存，错误不吞（弹出真实原因便于定位）
+window.addEventListener('mobile:save', () => {
+  const statusEl = document.querySelector('#fileSaveStatus');
+  // 只读/未启用自动保存（本地手机预览、分享版）：明确提示，避免“点了没反应”
+  if (!persistence.autoSaveEnabled) {
+    if (statusEl) statusEl.textContent = '当前为只读预览，无法保存';
+    return;
+  }
+  try {
+    save();
+    if (statusEl) statusEl.textContent = '正在保存…';
+  } catch (err) {
+    // eslint-disable-next-line no-alert
+    window.alert(`保存失败：${err?.message || err}`);
+  }
 });
 // 页面卸载时统一清理监听器与 Leaflet 地图,避免热重载/重复挂载产生残留。
 window.addEventListener('pagehide', () => {

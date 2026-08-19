@@ -68,15 +68,20 @@ function createRouter({ store, amapKey, qweatherKey }) {
     const [api, resource, id, action, sub] = segs;
     if (api !== 'api') return { statusCode: 404, data: { ok: false, error: '接口不存在' } };
 
+    // 本地文件接口在云端兜底：返回空数据（旧版前端未登录也会请求，避免 404 报错）
+    if (resource === 'planner-data') {
+      if (method === 'GET' || method === 'PUT') return { statusCode: 200, data: { data: null, savedAt: new Date().toISOString() } };
+    }
+
     // 网页端复用：高德/天气查询（GET 取 query，路线取 body）与预览模式。
     // 公网域名暴露时高德类接口必须登录，防止未授权消耗配额。
     if (['geocode', 'place-photos', 'place-details', 'route', 'weather'].includes(resource)) {
       if (!user) return { statusCode: 401, data: { ok: false, error: '未登录' } };
     }
     try {
-      if (resource === 'geocode') return await amap.geocode(query);
-      if (resource === 'place-photos') return await amap.placePhotos(query);
-      if (resource === 'place-details') return await amap.placeDetails(query);
+      if (resource === 'geocode') return await amap.geocode({ ...query, ...(body && typeof body === 'object' ? body : {}) });
+      if (resource === 'place-photos') return await amap.placePhotos({ ...query, ...(body && typeof body === 'object' ? body : {}) });
+      if (resource === 'place-details') return await amap.placeDetails({ ...query, ...(body && typeof body === 'object' ? body : {}) });
       if (resource === 'route' && method === 'POST') return await amap.calculateRoute(body);
       if (resource === 'weather') return await amap.weather({ ...query, ...(body && typeof body === 'object' ? body : {}) });
       if (resource === 'preview-mode') return await amap.previewMode(headers);
@@ -119,6 +124,19 @@ function createRouter({ store, amapKey, qweatherKey }) {
       if (action === 'locations' && method === 'PUT') return trips.updateLocations(user._id, id, body);
       if (action === 'expenses' && method === 'GET') return trips.getExpenses(user._id, id);
       if (action === 'expenses' && method === 'PUT') return trips.updateExpenses(user._id, id, body);
+      // 轻量路线（web 保存拆分）
+      if (action === 'routes' && method === 'GET') return trips.getRoutes(user._id, id);
+      if (action === 'routes' && sub === 'sync' && method === 'PUT') return trips.syncRoutes(user._id, id, body);
+      if (action === 'routes' && sub === 'item' && method === 'PUT') return trips.updateRoute(user._id, id, body);
+      if (action === 'routes' && method === 'PUT') return trips.updateRoutes(user._id, id, body);
+      // 通用地点库
+      if (action === 'universal' && method === 'GET') return trips.getUniversal(user._id, id);
+      if (action === 'universal' && method === 'POST') return trips.addUniversalToPlan(user._id, id, body);
+      // 自定义地点类别
+      if (action === 'categories' && method === 'GET') return trips.getCategories(user._id, id);
+      if (action === 'categories' && method === 'PUT') return trips.updateCategories(user._id, id, body);
+      // 导出 JSON 到云存储
+      if (action === 'export' && method === 'POST') return trips.exportJson(user._id, id);
       if (action === 'share' && method === 'POST') return trips.share(user._id, id, body);
       if (action === 'members' && method === 'GET') return trips.members(user._id, id);
       if (method === 'GET') return trips.get(user._id, id);

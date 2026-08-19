@@ -19,11 +19,17 @@ function handleUnauthorized() {
   window.location.reload();
 }
 
+const localHostnames = new Set(['localhost', '127.0.0.1', '::1']);
+const defaultCloudApiBase = 'https://cloud1-d0giwgf98368c9398-1468220648.ap-shanghai.app.tcloudbase.com';
+const configuredApiBase = (() => {
+  if (runtime.shareMode || localHostnames.has(window.location.hostname)) return '';
+  try { return window.__API_BASE__ || defaultCloudApiBase; } catch { return defaultCloudApiBase; }
+})();
 const api = createApi({
   storage: localStorage,
   onUnauthorized: handleUnauthorized,
-  // 云端部署时注入 window.__API_BASE__ 指向云函数公用域名；默认空 = 同源（本地 server.js）
-  apiBase: (() => { try { return window.__API_BASE__ || ''; } catch { return ''; } })(),
+  // localhost 保持同源联调；正式 Web 默认连接腾讯云开发，仍允许部署时覆盖。
+  apiBase: configuredApiBase,
 });
 const preview = runtime.shareMode
   ? { mode: 'mobile' }

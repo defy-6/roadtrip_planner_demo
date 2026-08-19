@@ -1,5 +1,6 @@
 // 会话层：计划快照、数据合并、保存/载入与预设载入。
 // 纯数据与持久化编排，不直接渲染 DOM；渲染回调（renderSchedule 等）由 runtime 注入。
+import { localToday } from './utils.js';
 export function createSession({
   state, $, itemsEl, values, persistence, isShareMode, shareData, defaultPlanId,
   migrate, renderPlanSelect, setPlanCatalog,
@@ -157,7 +158,9 @@ export function createSession({
     const usedRouteIds = new Set(state.schedule.map(event => event.routeLinks?.routeId).filter(Boolean));
     state.plans.forEach(plan => { const snapshot = snapshotForPlan(plan.id); (snapshot?.schedule || []).forEach(event => { if (event.routeLinks?.routeId) usedRouteIds.add(event.routeLinks.routeId); }); });
     state.routes = state.routes.filter(route => usedRouteIds.has(route.id));
-    state.preferences = { ...state.preferences, ...(data.preferences || {}) }; state.dayFilter = '';
+    state.preferences = { ...state.preferences, ...(data.preferences || {}) };
+    // 刷新后优先显示"当日"时间表：今天在行程日期内则默认筛选今天，否则显示全部
+    state.dayFilter = state.schedule.some(item => item.date === localToday()) ? localToday() : '';
     state.schedule.forEach((entry, scheduleIndex) => {
       const oldItem = (data.items || [])[scheduleIndex] || {}; const place = state.locations.find(item => item.id === entry.locationId);
       addItem({ type: entry.type || typeForTitle(entry.title), date: entry.date, startTime: entry.start, endTime: entry.end || '', name: entry.title, address: place?.address || entry.address || '', note: entry.detail || '', photo: oldItem.photo || entry.photo || '', scheduleIndex });

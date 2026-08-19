@@ -157,7 +157,7 @@ test('api 云分流：有活动行程走 trips API，否则走本地文件', asy
 
     const saved = await api.savePlannerData({ name: '保存' });
     assert.equal(saved.updatedAt, '2026-02-01T00:00:00Z', '云保存返回时间戳');
-    assert.equal(calls.at(-1).method, 'PUT');
+    assert.equal(calls.at(-1).method, 'GET', '拆分保存末尾回读时间戳');
   } finally {
     delete globalThis.fetch;
   }
@@ -177,6 +177,77 @@ test('api 云分流：401 触发 onUnauthorized（非登录接口）', async () 
     api.setActiveTrip('t1');
     await assert.rejects(() => api.getPlannerData(), /未登录/);
     assert.equal(unauthorized, 1);
+  } finally {
+    delete globalThis.fetch;
+  }
+});
+
+test('api 云保存：超长路线折线先降采样，拆分请求保持在网关限制内', async () => {
+  const storage = memoryStorage();
+  storage.setItem('roadtrip-token', 'token1');
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, method: options.method || 'GET', body: options.body || '' });
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ ok: true, trip: { _id: 't1', data: {}, updated_at: '2026-02-01T00:00:00Z' } }),
+    };
+  };
+  try {
+    const { createApi } = await import(path.join(root, 'public', 'services', 'api.js'));
+    const api = createApi({ storage });
+    api.setActiveTrip('t1');
+    const polyline = Array.from({ length: 20_000 }, (_, index) => `${80 + index / 100_000},${40 + index / 100_000}`).join(';');
+    const route = { id: 'r1', amap: { steps: [{ polyline }] } };
+    await api.savePlannerData({
+      activeVersion: 'v1',
+      plans: [{ id: 'v1', name: '测试' }],
+      versions: { v1: { schedule: [], locations: [], routes: [route] } },
+      routes: [route],
+    });
+
+    const putCalls = calls.filter(call => call.method === 'PUT');
+    assert.ok(putCalls.length >= 2, '应拆分主数据与路线请求');
+    putCalls.forEach(call => assert.ok(Buffer.byteLength(call.body) < 512 * 1024, `${call.url} 请求体不应超过 512 KiB`));
+    const routeCall = putCalls.find(call => call.url.endsWith('/routes/item'));
+    const savedPoints = JSON.parse(routeCall.body).route.amap.steps[0].polyline.split(';');
+    assert.ok(savedPoints.length < 20_000, '超长折线应被降采样');
+    assert.equal(savedPoints.at(-1), polyline.split(';').at(-1), '降采样必须保留终点');
+  } finally {
+    delete globalThis.fetch;
+  }
+});
+
+test('api 云保存：仅修改费用时不重复上传路线', async () => {
+  const storage = memoryStorage();
+  const calls = [];
+  const route = { id: 'r1', amap: { steps: [{ polyline: '80,40;81,41' }] } };
+  const plannerData = {
+    activeVersion: 'v1',
+    routes: [route],
+    versions: { v1: { schedule: [], locations: [], routes: [route], expenses: [] } },
+  };
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, method: options.method || 'GET' });
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ ok: true, trip: { data: plannerData, updated_at: '2026-02-01T00:00:00Z' } }),
+    };
+  };
+  try {
+    const { createApi } = await import(path.join(root, 'public', 'services', 'api.js'));
+    const api = createApi({ storage });
+    api.setActiveTrip('t1');
+    await api.getPlannerData();
+    plannerData.versions.v1.expenses = [{ id: 'e1', amount: 200 }];
+    calls.length = 0;
+    await api.savePlannerData(plannerData);
+    assert.equal(calls.some(call => call.url.includes('/routes/')), false, '费用变化不应触发路线接口');
+    assert.deepEqual(calls.filter(call => call.method === 'PUT').map(call => call.url), ['/api/trips/t1/expenses'], '费用变化只应更新费用域');
   } finally {
     delete globalThis.fetch;
   }

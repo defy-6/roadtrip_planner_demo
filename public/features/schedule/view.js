@@ -39,6 +39,10 @@ export function createScheduleView({
   }
 
   function bindScheduleSelection() {
+    // 移动端禁用鼠标拖拽框选：手机上用单点编辑事件、滚动浏览时间表，
+    // 不应让手指拖动触发桌面式多选框（会造成误选/干扰滚动）。
+    const isMobile = document.documentElement.dataset.previewMode === 'mobile';
+    if (isMobile) return;
     bindScheduleMarquee({
       schedule: $('#schedule'), enabled: scheduleSelectionMode, selectedIndexes: selectedScheduleIndexes,
       onSuppressClick: () => { suppressScheduleClick = true; },
@@ -252,6 +256,25 @@ export function createScheduleView({
 
   $('#schedule').onclick = event => {
     const block = event.target.closest('[data-schedule-index]');
+    const isMobile = document.documentElement.dataset.previewMode === 'mobile';
+    const multiselect = isMobile && document.body.classList.contains('mobile-multiselect');
+    if (multiselect) {
+      if (suppressScheduleClick) { suppressScheduleClick = false; return; }
+      if (block) {
+        const index = Number(block.dataset.scheduleIndex);
+        if (selectedScheduleIndexes.has(index)) selectedScheduleIndexes.delete(index);
+        else selectedScheduleIndexes.add(index);
+        block.classList.toggle('batch-selected', selectedScheduleIndexes.has(index));
+        focusScheduleEvent(index);
+      } else {
+        // 多选模式下点空白清空选择
+        selectedScheduleIndexes.clear();
+        document.querySelectorAll('.calendar-block.batch-selected').forEach(node => node.classList.remove('batch-selected'));
+      }
+      refreshScheduleBatchControls();
+      window.dispatchEvent(new CustomEvent('mobile:selectionchange'));
+      return;
+    }
     if (scheduleSelectionMode) {
       if (suppressScheduleClick) { suppressScheduleClick = false; return; }
       if (block) {
@@ -294,6 +317,13 @@ export function createScheduleView({
     }
   };
   $('#schedule').ondblclick = event => { const block = event.target.closest('[data-schedule-index]'); if (block) openScheduleEditor(Number(block.dataset.scheduleIndex)); };
+  // 进入/退出移动端多选模式时重置选中状态，避免残留
+  window.addEventListener('mobile:multiselect', () => {
+    selectedScheduleIndexes.clear();
+    document.querySelectorAll('.calendar-block.batch-selected').forEach(node => node.classList.remove('batch-selected'));
+    refreshScheduleBatchControls();
+    window.dispatchEvent(new CustomEvent('mobile:selectionchange'));
+  });
   $('#dayFilter').onchange = event => changeDayFilter(event.target.value);
 
   function changeDayFilter(value) {

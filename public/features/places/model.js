@@ -28,9 +28,18 @@ export function findMatchingLocation(locations, address, name = '', resolvedLoca
 
 export function syncPlaceToUniversal(place, universalLocations = []) {
   if (!place) return place;
+  // 去重大字段：通用库只存轻量元数据，避免地点照片在计划内和通用库各存一份 base64
+  // （保存时全量 PUT，重复图片会翻倍撑爆腾讯云 5MB 网关限制，触发 413）。
+  // 网络图片 URL（高德 https://...）保留；dataURL base64 照片剥离，指向计划内同 id 地点即可，
+  // 载入时 mergeUniversalLocations 会用计划内完整地点（含 photo）回填。
+  const stripped = { ...place };
+  if (typeof stripped.photo === 'string' && stripped.photo.startsWith('data:')) {
+    delete stripped.photo;
+    if (stripped.photoSource) delete stripped.photoSource;
+  }
   const existing = findMatchingLocation(universalLocations, place.address, place.name, place.resolved?.location);
-  if (existing) Object.assign(existing, structuredClone({ ...place, id: existing.id }));
-  else universalLocations.push(structuredClone(place));
+  if (existing) Object.assign(existing, structuredClone({ ...stripped, id: existing.id }));
+  else universalLocations.push(structuredClone(stripped));
   return place;
 }
 

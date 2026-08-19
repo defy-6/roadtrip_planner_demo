@@ -28,6 +28,91 @@
         <view class="picker-value type-badge type-{{form.type}}">{{types[typeIndex].label}}</view>
       </picker>
     </view>
+
+    <block wx:if="{{form.type === 'drive'}}">
+      <view class="field-row">
+        <view class="field">
+          <text class="field-label">出行方式</text>
+          <picker range="{{modes}}" range-key="label" value="{{modeIndex}}" bindchange="onModeChange">
+            <view class="picker-value">{{modes[modeIndex].label}}</view>
+          </picker>
+        </view>
+        <view class="field" wx:if="{{form.mode === 'driving'}}">
+          <text class="field-label">路线策略</text>
+          <picker range="{{strategies}}" range-key="label" value="{{strategyIndex}}" bindchange="onStrategyChange">
+            <view class="picker-value">{{strategies[strategyIndex].label}}</view>
+          </picker>
+        </view>
+      </view>
+      <view class="field" wx:if="{{form.mode === 'transit'}}">
+        <view class="field-row">
+          <view class="field">
+            <text class="field-label">起点城市</text>
+            <input class="input" placeholder="例如：乌鲁木齐" value="{{form.transitCity}}" data-field="transitCity" bindinput="onInput" />
+          </view>
+          <view class="field">
+            <text class="field-label">终点城市</text>
+            <input class="input" placeholder="例如：伊宁" value="{{form.transitCityd}}" data-field="transitCityd" bindinput="onInput" />
+          </view>
+        </view>
+      </view>
+      <view class="field">
+        <text class="field-label">起点名称</text>
+        <input class="input" placeholder="出发地名称，例如：伊宁" value="{{form.origin}}" data-field="origin" bindinput="onInput" />
+      </view>
+      <view class="field">
+        <text class="field-label">起点地址（用于计算路线）</text>
+        <input class="input" placeholder="详细地址，留空则用名称" value="{{form.originAddress}}" data-field="originAddress" bindinput="onInput" />
+      </view>
+      <view class="field">
+        <text class="field-label">途经点（用、分隔，顺序即途经顺序）</text>
+        <input class="input" placeholder="例如：精河、赛里木湖" value="{{form.waypointsText}}" data-field="waypointsText" bindinput="onInput" />
+        <text class="wp-pick" bindtap="addWaypoint">＋ 从地点库选途经点</text>
+      </view>
+      <view class="field">
+        <text class="field-label">终点名称</text>
+        <input class="input" placeholder="目的地名称，例如：巴音布鲁克" value="{{form.destination}}" data-field="destination" bindinput="onInput" />
+      </view>
+      <view class="field">
+        <text class="field-label">终点地址（用于计算路线）</text>
+        <input class="input" placeholder="详细地址，留空则用名称" value="{{form.destinationAddress}}" data-field="destinationAddress" bindinput="onInput" />
+      </view>
+      <view class="field">
+        <button class="btn-ghost" bindtap="calcRoute" disabled="{{calcBusy || !form.origin || !form.destination}}">
+          {{calcBusy ? '计算中…' : (routeInfo ? '重新计算路线' : '计算路线')}}
+        </button>
+        <view class="route-result" wx:if="{{routeInfo}}">
+          {{routeInfo.distanceText}} · {{routeInfo.durationText}} · 过路费 ¥{{routeInfo.tolls}}
+        </view>
+      </view>
+    </block>
+
+    <block wx:if="{{form.type === 'flight'}}">
+      <view class="field">
+        <text class="field-label">航班号</text>
+        <input class="input" placeholder="例如：CZ8954" value="{{form.flightNumber}}" data-field="flightNumber" bindinput="onInput" />
+      </view>
+      <view class="field">
+        <text class="field-label">出发机场</text>
+        <input class="input" placeholder="例如：福州长乐国际机场" value="{{form.departureAirport}}" data-field="departureAirport" bindinput="onInput" />
+      </view>
+      <view class="field">
+        <text class="field-label">到达机场</text>
+        <input class="input" placeholder="例如：北京大兴国际机场" value="{{form.arrivalAirport}}" data-field="arrivalAirport" bindinput="onInput" />
+      </view>
+    </block>
+
+    <view class="price-box">
+      <view class="price-title">费用明细</view>
+      <view class="price-item" wx:for="{{priceItems}}" wx:key="key">
+        <text class="price-kind">{{item.kind === 'per' ? '单人' : '共同'}}</text>
+        <input class="input price-note" placeholder="说明" value="{{item.note}}" data-key="{{item.key}}" data-field="note" bindinput="onPriceInput" />
+        <input class="input price-amount" type="digit" placeholder="金额" value="{{item.amount}}" data-key="{{item.key}}" data-field="amount" bindinput="onPriceInput" />
+        <input wx:if="{{item.kind === 'per'}}" class="input price-count" type="number" placeholder="人数" value="{{item.count}}" data-key="{{item.key}}" data-field="count" bindinput="onPriceInput" />
+        <text class="price-del" data-key="{{item.key}}" bindtap="removePriceItem">✕</text>
+      </view>
+      <button class="btn-ghost price-add" bindtap="addPriceItem">＋ 添加费用</button>
+    </view>
     <view class="field">
       <text class="field-label">标题</text>
       <input class="input" placeholder="事件名称，例如：四姑娘山" value="{{form.title}}" data-field="title" bindinput="onInput" />

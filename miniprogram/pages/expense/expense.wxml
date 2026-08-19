@@ -2,8 +2,9 @@
   <view class="error" wx:if="{{error}}">{{error}}</view>
 
   <view class="card total-card">
-    <view class="hint">全程总开销</view>
-    <view class="total">¥ {{total}}</view>
+    <view class="hint">全程总开销（账本 + 事件费用）</view>
+    <view class="total">¥ {{grandTotal}}</view>
+    <view class="hint" wx:if="{{eventsPrice && eventsPrice !== '0.00'}}">其中事件内嵌费用 ¥{{eventsPrice}} · 独立账目 ¥{{total}}</view>
     <button class="btn-primary add-expense" bindtap="showAdd">＋ 记一笔</button>
   </view>
 
@@ -26,6 +27,12 @@
       <input class="input" placeholder="例如：晚餐 / 停车费" value="{{form.note}}" data-field="note" bindinput="onInput" />
     </view>
     <view class="field">
+      <text class="field-label">关联安排（可选）</text>
+      <picker range="{{eventOptions}}" range-key="title" value="{{eventSel}}" bindchange="onEventChange">
+        <view class="picker-value">{{eventOptions[eventSel].title}}</view>
+      </picker>
+    </view>
+    <view class="field">
       <text class="field-label">金额（元）</text>
       <input class="input" type="digit" placeholder="0.00" value="{{form.amount}}" data-field="amount" bindinput="onInput" />
     </view>
@@ -44,11 +51,11 @@
       <view class="expense-row" wx:for="{{item.items}}" wx:for-item="exp" wx:key="id">
         <view class="exp-main">
           <view class="exp-note">{{exp.note}}</view>
-          <view class="hint">{{exp.category}}</view>
+          <view class="hint">{{exp.category}}{{exp.source === 'event' ? ' · 来自时间表' : ''}}</view>
         </view>
         <text class="exp-amount">¥ {{exp.amount}}</text>
-        <text class="exp-edit" data-id="{{exp.id}}" bindtap="edit">编辑</text>
-        <text class="exp-del" data-id="{{exp.id}}" bindtap="remove">删除</text>
+        <text class="exp-edit" wx:if="{{exp.source === 'expense'}}" data-id="{{exp.id}}" bindtap="edit">编辑</text>
+        <text class="exp-del" wx:if="{{exp.source === 'expense'}}" data-id="{{exp.id}}" bindtap="remove">删除</text>
       </view>
     </view>
   </view>

@@ -23,6 +23,11 @@ export function routeLengthMeters(latLngs) {
 
 export function createRouteOverlapTools(policy = { proximityMeters: 400, minCorridorMeters: 20_000, minShorterRouteRatio: .18 }) {
   const sharedRouteCorridorMeters = (first, second) => {
+    // 统一按 250m 距离插值重采样：消除保存时 polyline 抽稀（api.js compactPolyline）
+    // 造成的点密度差异。否则抽稀后点距可达 1km+，400m 邻近容差无法命中，
+    // 视觉分道判定会把本应重叠的路线判为不重叠（两条线完全叠在一起）。
+    first = corridorRouteSamples(first, 250);
+    second = corridorRouteSamples(second, 250);
     const samples = points => {
       if (!points.length) return [];
       const result = [{ point: points[0], distanceFromPrevious: 0 }];

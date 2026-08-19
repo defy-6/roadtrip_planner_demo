@@ -1,9 +1,10 @@
 // 航班导入对话框：批量录入航班并关联机场位置。
+import { localToday } from '../../core/utils.js';
 export function bindFlightImporter({ $, state, clockToMinute, linkFlightAirports, addItem, renderSchedule, applyDayFilter, save, renderLocations, focusScheduleEvent }) {
   const flightImporter = $('#flightImporter');
   $('#importFlightBtn').onclick = () => {
     $('#flightImportForm').reset();
-    $('#flightDate').value = state.dayFilter || state.schedule[0]?.date || new Date().toISOString().slice(0, 10);
+    $('#flightDate').value = state.dayFilter || localToday();
     $('#flightArrivalDate').value = $('#flightDate').value;
     flightImporter.showModal();
     requestAnimationFrame(() => $('#flightNumber').focus());

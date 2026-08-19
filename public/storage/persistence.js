@@ -38,7 +38,11 @@ export function createPersistence({ runtime, api, onSaveStatus = () => {} }) {
         const result = await api.savePlannerData(buildPayload());
         onFileSaved(result);
         onSaveStatus(`已写入本地文件 · ${new Date(result.savedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`);
-      } catch { onSaveStatus('本地文件写入失败'); }
+      } catch (err) {
+        onSaveStatus('保存失败');
+        // eslint-disable-next-line no-alert
+        window.alert(`保存失败：${err?.message || '未知错误'}\n本次修改未保存，刷新会丢失。请处理上述错误后重试。`);
+      }
     }, delay);
   }
 

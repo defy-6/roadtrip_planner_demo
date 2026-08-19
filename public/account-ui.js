@@ -1,6 +1,6 @@
 // 账号 UI（朴素占位版）：登录/注册表单 + 行程管理面板。
 // 仅负责交互装配与流程，视觉等设计稿落地后整体替换。
-import { $, escapeHtml } from '../core/utils.js';
+import { $, escapeHtml } from './core/utils.js';
 
 const CLOSED_HTML = '<span class="hint">正在初始化账号…</span>';
 
@@ -42,7 +42,10 @@ export function bindAccountUI({ account, api }) {
     const row = trip => `
       <li class="account-trip" data-trip-id="${trip._id}">
         <div><b>${escapeHtml(trip.name)}</b><small>${trip.role === 'owner' ? '创建者' : '协作者'} · 更新于 ${escapeHtml((trip.updated_at || '').slice(0, 10))}</small></div>
-        <span class="account-trip-active">${trip._id === account.getActiveTripId() ? '编辑中' : '打开'}</span>
+        <span class="account-trip-actions">
+          ${trip.role === 'owner' ? `<button type="button" class="ghost share-link" data-share-trip="${trip._id}" data-share-enabled="${trip.share_enabled ? '1' : ''}" data-share-code="${escapeHtml(trip.share_code || '')}">${trip.share_enabled ? '分享码 ' + escapeHtml(trip.share_code) : '分享'}</button>` : ''}
+          <span class="account-trip-active">${trip._id === account.getActiveTripId() ? '编辑中' : '打开'}</span>
+        </span>
       </li>`;
     return `
       <div class="account-trips">
@@ -99,6 +102,32 @@ export function bindAccountUI({ account, api }) {
           await api.setActiveTrip(id);
           try { localStorage.setItem('roadtrip-active-trip', id); } catch { /* 忽略 */ }
           location.reload();
+        } catch (err) {
+          root.insertAdjacentHTML('beforeend', `<p class="account-error">${escapeHtml(err.message)}</p>`);
+        }
+      });
+    });
+    // 分享按钮：未开启则生成分享码，已开启则复制
+    root.querySelectorAll('[data-share-trip]').forEach(btn => {
+      btn.addEventListener('click', async event => {
+        event.stopPropagation();
+        const tripId = btn.dataset.shareTrip;
+        const enabled = btn.dataset.shareEnabled === '1';
+        const code = btn.dataset.shareCode;
+        if (enabled && code) {
+          try { await navigator.clipboard.writeText(code); } catch { /* 忽略 */ }
+          // eslint-disable-next-line no-alert
+          window.alert(`分享码：${code}\n（已复制到剪贴板）\n\n朋友在网页/小程序「加入协作」输入此码即可共同编辑。`);
+          return;
+        }
+        try {
+          const { trip } = await api.tripShare(tripId, true);
+          btn.dataset.shareEnabled = '1';
+          btn.dataset.shareCode = trip.share_code;
+          btn.textContent = `分享码 ${trip.share_code}`;
+          try { await navigator.clipboard.writeText(trip.share_code); } catch { /* 忽略 */ }
+          // eslint-disable-next-line no-alert
+          window.alert(`已开启分享！分享码：${trip.share_code}\n（已复制）\n\n朋友在网页/小程序「加入协作」输入此码即可共同编辑。`);
         } catch (err) {
           root.insertAdjacentHTML('beforeend', `<p class="account-error">${escapeHtml(err.message)}</p>`);
         }

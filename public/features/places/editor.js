@@ -1,9 +1,10 @@
+import { compressImageFile } from '../../core/utils.js';
+
 export function createPlaceEditor({ state, $, api, geocode, placeTypeOptionsHtml, getDefaultType, findMatchingLocation, importUniversalPlace, normalizePlaceLookup, removeLocations, save, renderLocations }) {
   const dialog = $('#placeEditor');
   let pendingConfirmation = null, editingId = null, resolved = null, photos = [], photoIndex = -1;
   const detailIds = ['newPlaceIntro', 'newPlaceOpenTime', 'newPlaceRating', 'newPlaceReferenceCost', 'newPlaceTicketPrice', 'newPlaceTags'];
   const hasDetails = () => detailIds.some(id => Boolean($(`#${id}`).value.trim()));
-  const fileToDataUrl = file => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
   function renderResolved() {
     const node = $('#newPlaceResolvedCoords');
     if (!resolved?.location) { node.hidden = true; node.textContent = ''; return; }
@@ -49,10 +50,11 @@ export function createPlaceEditor({ state, $, api, geocode, placeTypeOptionsHtml
     return new Promise(resolveConfirmation => { pendingConfirmation = resolveConfirmation; });
   }
   function openPlaceEditor(placeId) {
-    const place = state.locations.find(item => item.id === placeId); if (!place) return;
-    reset({}, place); refreshLabels();
-    $('#newPlaceAmapStatus').textContent = place.resolved ? `已定位：${place.resolved.name || place.name}。可重新查询位置、图片或 POI 详情；保存不会重复查询。` : '填写名称和完整地址后可分别查询；保存不会自动调用高德。';
-    dialog.querySelector('h3').textContent = '编辑地点'; dialog.showModal(); requestAnimationFrame(() => $('#newPlaceName').focus());
+    // placeId 为空 = 新建地点（reset 已支持 place 为空）
+    const place = state.locations.find(item => item.id === placeId);
+    reset({}, place || null); refreshLabels();
+    $('#newPlaceAmapStatus').textContent = place?.resolved ? `已定位：${place.resolved.name || place.name}。可重新查询位置、图片或 POI 详情；保存不会重复查询。` : '填写名称和完整地址后可分别查询；保存不会自动调用高德。';
+    dialog.querySelector('h3').textContent = place ? '编辑地点' : '新增地点'; dialog.showModal(); requestAnimationFrame(() => $('#newPlaceName').focus());
   }
   function cancel() { dialog.close(); editingId = null; $('#placeEditorDelete').hidden = true; pendingConfirmation?.(null); pendingConfirmation = null; }
   async function queryLocation() {
@@ -80,7 +82,7 @@ export function createPlaceEditor({ state, $, api, geocode, placeTypeOptionsHtml
     event.preventDefault(); const name = $('#newPlaceName').value.trim(); if (!name) { $('#newPlaceName').focus(); return; }
     const photoFile = $('#newPlacePhoto').files[0], address = $('#newPlaceAddress').value.trim(), selectedPhoto = photos[photoIndex];
     const keys = ['intro', 'openTime', 'rating', 'referenceCost', 'ticketPrice', 'tags']; const poiDetails = Object.fromEntries(keys.map((key, index) => [key, $(`#${detailIds[index]}`).value.trim()]));
-    const draft = { type: $('#newPlaceType').value, name, address, note: $('#newPlaceNote').value.trim(), poiDetails, ...(photoFile ? { photo: await fileToDataUrl(photoFile) } : selectedPhoto ? { photo: selectedPhoto.url, photoSource: `高德 POI · ${selectedPhoto.poiName || name}` } : {}) };
+    const draft = { type: $('#newPlaceType').value, name, address, note: $('#newPlaceNote').value.trim(), poiDetails, ...(photoFile ? { photo: await compressImageFile(photoFile) } : selectedPhoto ? { photo: selectedPhoto.url, photoSource: `高德 POI · ${selectedPhoto.poiName || name}` } : {}) };
     const button = event.submitter; if (button) { button.disabled = true; button.textContent = '正在保存…'; }
     let place = editingId ? state.locations.find(item => item.id === editingId) : findMatchingLocation(state.locations, draft.address, draft.name); const addressChanged = Boolean(place && normalizePlaceLookup(place.address) !== normalizePlaceLookup(draft.address));
     if (!place) place = { id: crypto.randomUUID(), ...draft }; else Object.assign(place, draft);

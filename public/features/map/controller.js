@@ -125,7 +125,12 @@ export function createMapController({
     const selectionSize = selectionBounds.getNorthEast().distanceTo(selectionBounds.getSouthWest());
     const selectionZoom = selectionSize > 25 ? map.getBoundsZoom(selectionBounds, false, L.point(58, 58)) : maxZoom;
     const zoom = Math.min(maxZoom, Math.max(contextZoom, Math.min(selectionZoom, contextZoom + 3)));
-    map.flyTo(selectionBounds.getCenter(), zoom, { animate: true, duration: .45 });
+    // 防 NaN：容器尺寸为 0（地图未渲染/隐藏）或中心坐标无效时跳过聚焦
+    const size = map.getSize();
+    const center = selectionBounds.getCenter();
+    if (!size || size.x === 0 || size.y === 0) return;
+    if (!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lng)) return;
+    map.flyTo(center, zoom, { animate: true, duration: .45 });
   }
 
   function setOverviewFocusOpacity(active) {
@@ -182,7 +187,10 @@ export function createMapController({
     setRouteLayer(routeLayer);
     L.circleMarker([lat, lng], selectedPointStyle(place.type)).addTo(routeLayer);
     addSelectedPlacePhotoCallout(routeLayer, [lat, lng], place);
-    getMap().flyTo([lat, lng], Math.max(getMap().getZoom(), 11), { animate: true, duration: .45 });
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      const map = getMap(); const size = map.getSize();
+      if (size && size.x > 0 && size.y > 0) map.flyTo([lat, lng], Math.max(map.getZoom(), 11), { animate: true, duration: .45 });
+    }
     // 图片气泡承担高亮注记；详情在地图下方信息栏显示，避免 Leaflet 弹窗遮挡缩略图。
     getMap().closePopup();
     const detail = $('#routeDetail');

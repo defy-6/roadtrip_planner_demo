@@ -1,4 +1,5 @@
 import { calculatePriceInfo, normalizedPriceItems } from './model.js';
+import { localToday } from '../../core/utils.js';
 
 const money = value => `¥${Number(value || 0).toFixed(2)}`;
 
@@ -33,7 +34,7 @@ export function createExpenseLedger({ state, save, openScheduleEditor, escapeHtm
   function showForm(expense = {}) {
     form.hidden = false;
     form.querySelector('[data-expense-id]').value = expense.id || '';
-    form.querySelector('[data-expense-date]').value = expense.date || state.dayFilter || state.schedule[0]?.date || new Date().toISOString().slice(0, 10);
+    form.querySelector('[data-expense-date]').value = expense.date || state.dayFilter || localToday();
     renderEventOptions(form.querySelector('[data-expense-date]').value);
     form.querySelector('[data-expense-category]').value = expense.category || '餐饮';
     form.querySelector('[data-expense-note]').value = expense.note || '';

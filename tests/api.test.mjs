@@ -230,6 +230,35 @@ test('计划接口：getPlan / switchPlan / create / copy / remove', async () =>
   assert.equal(denied.statusCode, 403);
 });
 
+test('路线逐条保存：保留主数据、支持 upsert，并在最后同步删除', async () => {
+  const initialData = {
+    activeVersion: 'v1',
+    plans: [{ id: 'v1', name: '路线测试' }],
+    versions: { v1: { name: '路线测试', schedule: [{ id: 's1' }], locations: [{ id: 'l1' }], routes: [{ id: 'old' }] } },
+    routes: [{ id: 'old' }],
+  };
+  const created = await call('POST', '/api/trips', { token: alice.token, body: { name: '逐条路线', data: initialData } });
+  const tripId = JSON.parse(created.body).trip._id;
+  const slim = structuredClone(initialData);
+  slim.versions.v1.schedule = [];
+  slim.versions.v1.locations = [];
+  slim.versions.v1.routes = [];
+  slim.routes = [];
+  const main = await call('PUT', `/api/trips/${tripId}`, { token: alice.token, body: { data: slim, preserve_large_fields: true } });
+  assert.equal(main.statusCode, 200);
+  assert.equal(JSON.parse(main.body).trip.data.versions.v1.schedule[0].id, 's1', '轻字段保存不得覆盖已有大字段');
+
+  const route = { id: 'new/route', name: '新路线', amap: { steps: [{ polyline: '80,40;81,41' }] } };
+  const upsert = await call('PUT', `/api/trips/${tripId}/routes/item`, { token: alice.token, body: { route } });
+  assert.equal(upsert.statusCode, 200);
+  const sync = await call('PUT', `/api/trips/${tripId}/routes/sync`, { token: alice.token, body: { routeIds: ['new/route'] } });
+  assert.equal(sync.statusCode, 200);
+  const saved = await call('GET', `/api/trips/${tripId}`, { token: alice.token });
+  const savedData = JSON.parse(saved.body).trip.data;
+  assert.deepEqual(savedData.versions.v1.routes.map(item => item.id), ['new/route']);
+  assert.deepEqual(savedData.routes.map(item => item.id), ['new/route']);
+});
+
 test('地点与账本轻量接口：读写 / 照片保留 / 越权', async () => {
   const created = await call('POST', '/api/trips', {
     token: alice.token,
@@ -247,12 +276,12 @@ test('地点与账本轻量接口：读写 / 照片保留 / 越权', async () =>
   const joined = await call('POST', '/api/trips/join', { token: bob.token, body: { share_code: JSON.parse(shareOn.body).trip.share_code } });
   assert.equal(joined.statusCode, 200);
 
-  // 读地点：瘦身不含 photo
+  // 读地点：photo 字段随接口返回（小程序地点列表显示缩略图）
   const loc = await call('GET', `/api/trips/${tripId}/locations`, { token: bob.token });
   assert.equal(loc.statusCode, 200);
   const locBody = JSON.parse(loc.body);
   assert.equal(locBody.locations[0].name, '伊宁住宿');
-  assert.equal(locBody.locations[0].photo, undefined, '瘦身不应含 photo');
+  assert.equal(locBody.locations[0].photo, 'BASE64_PHOTO', '应返回 photo 供列表展示');
 
   // 改地点（不含 photo）→ 照片应保留
   const updated = await call('PUT', `/api/trips/${tripId}/locations`, {
@@ -275,6 +304,91 @@ test('地点与账本轻量接口：读写 / 照片保留 / 越权', async () =>
   // 越权 403
   assert.equal((await call('GET', `/api/trips/${tripId}/locations`, { token: carol.token })).statusCode, 403);
   assert.equal((await call('PUT', `/api/trips/${tripId}/expenses`, { token: carol.token, body: { expenses: [] } })).statusCode, 403);
+});
+
+test('通用地点库：读取 + 添加到当前计划', async () => {
+  const created = await call('POST', '/api/trips', {
+    token: alice.token,
+    body: {
+      name: '通用库行程',
+      data: {
+        activeVersion: 'p1',
+        plans: [{ id: 'p1', name: '计划一' }],
+        versions: { p1: { name: '计划一', locations: [] } },
+        locations: [{ id: 'u1', type: 'spot', name: '赛里木湖', address: '博州', photo: 'PHOTO' }],
+      },
+    },
+  });
+  const tripId = JSON.parse(created.body).trip._id;
+  const shareOn = await call('POST', `/api/trips/${tripId}/share`, { token: alice.token, body: { enabled: true } });
+  const joined = await call('POST', '/api/trips/join', { token: bob.token, body: { share_code: JSON.parse(shareOn.body).trip.share_code } });
+  assert.equal(joined.statusCode, 200);
+
+  // 读取通用库（瘦身不含 photo）
+  const univ = await call('GET', `/api/trips/${tripId}/universal`, { token: bob.token });
+  assert.equal(univ.statusCode, 200);
+  const univBody = JSON.parse(univ.body);
+  assert.equal(univBody.locations[0].name, '赛里木湖');
+  assert.equal(univBody.locations[0].photo, undefined);
+
+  // 添加到当前计划（photo 保留）
+  const add = await call('POST', `/api/trips/${tripId}/universal`, { token: bob.token, body: { locationId: 'u1' } });
+  assert.equal(add.statusCode, 200);
+  const plan = await call('GET', `/api/trips/${tripId}/locations`, { token: alice.token });
+  const locs = JSON.parse(plan.body).locations;
+  assert.equal(locs.length, 1);
+  assert.equal(locs[0].name, '赛里木湖');
+
+  // 重复添加不重复
+  await call('POST', `/api/trips/${tripId}/universal`, { token: bob.token, body: { locationId: 'u1' } });
+  const again = await call('GET', `/api/trips/${tripId}/locations`, { token: alice.token });
+  assert.equal(JSON.parse(again.body).locations.length, 1);
+
+  // 越权 403
+  assert.equal((await call('GET', `/api/trips/${tripId}/universal`, { token: carol.token })).statusCode, 403);
+});
+
+test('只读分享：viewer 角色可读不可写', async () => {
+  const created = await call('POST', '/api/trips', {
+    token: alice.token,
+    body: { name: '只读行程', data: { activeVersion: 'p1', plans: [{ id: 'p1', name: 'P1' }], versions: { p1: { name: 'P1', schedule: [], locations: [] } } } },
+  });
+  const tripId = JSON.parse(created.body).trip._id;
+  const shareOn = await call('POST', `/api/trips/${tripId}/share`, { token: alice.token, body: { enabled: true, readonly: true } });
+  const viewer = await register('vieweruser');
+  const joined = await call('POST', '/api/trips/join', { token: viewer.token, body: { share_code: JSON.parse(shareOn.body).trip.share_code } });
+  assert.equal(joined.statusCode, 200);
+  assert.equal(JSON.parse(joined.body).trip.role, 'viewer', '只读分享应授予 viewer 角色');
+  // 读 OK
+  assert.equal((await call('GET', `/api/trips/${tripId}/schedule`, { token: viewer.token })).statusCode, 200);
+  // 写 403（schedule / 计划 / 地点 / 分享）
+  assert.equal((await call('PUT', `/api/trips/${tripId}/schedule`, { token: viewer.token, body: { schedule: [] } })).statusCode, 403);
+  assert.equal((await call('POST', `/api/trips/${tripId}/plans`, { token: viewer.token, body: { name: 'X' } })).statusCode, 403);
+  assert.equal((await call('PUT', `/api/trips/${tripId}/locations`, { token: viewer.token, body: { locations: [] } })).statusCode, 403);
+  assert.equal((await call('POST', `/api/trips/${tripId}/share`, { token: viewer.token, body: { enabled: false } })).statusCode, 403);
+  // editor（非只读）分享可写
+  const shareEditor = await call('POST', `/api/trips/${tripId}/share`, { token: alice.token, body: { enabled: true, readonly: false } });
+  const editorUser = await register('editoruser');
+  await call('POST', '/api/trips/join', { token: editorUser.token, body: { share_code: JSON.parse(shareEditor.body).trip.share_code } });
+  assert.equal((await call('PUT', `/api/trips/${tripId}/schedule`, { token: editorUser.token, body: { schedule: [] } })).statusCode, 200);
+});
+
+test('自定义分类读写与导出接口', async () => {
+  const created = await call('POST', '/api/trips', { token: alice.token, body: { name: '分类行程', data: { activeVersion: 'p1', plans: [{ id: 'p1', name: 'P1' }], versions: { p1: { name: 'P1', locations: [] } } } } });
+  const tripId = JSON.parse(created.body).trip._id;
+  const shareOn = await call('POST', `/api/trips/${tripId}/share`, { token: alice.token, body: { enabled: true } });
+  const joined = await call('POST', '/api/trips/join', { token: bob.token, body: { share_code: JSON.parse(shareOn.body).trip.share_code } });
+  assert.equal(joined.statusCode, 200);
+
+  // categories 读写
+  const put = await call('PUT', `/api/trips/${tripId}/categories`, { token: bob.token, body: { categories: [{ id: 'c1', name: '加油站', color: '#c8a438' }] } });
+  assert.equal(put.statusCode, 200);
+  const get = await call('GET', `/api/trips/${tripId}/categories`, { token: alice.token });
+  assert.equal(JSON.parse(get.body).categories[0].name, '加油站');
+
+  // exportJson：本地无 wx-server-sdk → 业务 500（不崩溃）
+  const exp = await call('POST', `/api/trips/${tripId}/export`, { token: alice.token });
+  assert.equal(exp.statusCode, 500);
 });
 
 test('账号绑定与天气接口', async () => {

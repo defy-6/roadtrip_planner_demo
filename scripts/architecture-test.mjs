@@ -17,6 +17,8 @@ assert.doesNotMatch(index, /<link rel="stylesheet" href="\/mobile\.css(?:\?[^\"]
 assert.match(bootstrap, /preview\.mode === 'mobile'/, '手机样式只能在手机预览模式加载');
 assert.match(bootstrap, /stylesheet\.href = '\.\/mobile\.css/, '手机模式应动态加载独立 mobile.css');
 assert.match(bootstrap, /runtime\.shareMode[\s\S]*?mode: 'mobile'/, 'GitHub Pages 只读分享页应强制复用手机模式');
+assert.match(bootstrap, /defaultCloudApiBase[\s\S]*?configuredApiBase/, '正式 Web 应默认连接腾讯云开发 HTTP 网关');
+assert.match(bootstrap, /get\('cloud'\) === '1'/, 'localhost 手机预览应支持显式连接腾讯云联调');
 assert.match(index, /<dialog id="mapExportPreview"/);
 assert.match(index, /<dialog id="placeEditor"/);
 assert.match(index, /<dialog id="planDialog"/);
@@ -28,7 +30,7 @@ for (const feature of ['schedule', 'map', 'places', 'plans', 'dialogs']) {
 }
 assert.doesNotMatch(runtime, /document\.createElement\('dialog'\)/);
 assert.doesNotMatch(runtime, /document\.head\.append\(Object\.assign\(document\.createElement\('style'\)/);
-assert.match(app, /import '\.\/bootstrap\.js'/);
+assert.match(app, /import '\.\/bootstrap\.js(?:\?[^']*)?'/);
 assert.match(bootstrap, /startRuntime\(/);
 assert.match(persistence, /enableAutoSave/);
 assert.doesNotMatch(runtime, /(?:localStorage|fetch\()/);

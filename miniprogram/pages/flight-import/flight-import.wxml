@@ -1,0 +1,58 @@
+<view class="container">
+  <view class="error" wx:if="{{error}}">{{error}}</view>
+
+  <view class="card">
+    <view class="field">
+      <text class="field-label">日期</text>
+      <picker mode="date" value="{{form.date}}" bindchange="onDateChange">
+        <view class="picker-value">{{form.date}}</view>
+      </picker>
+    </view>
+    <view class="field-row">
+      <view class="field">
+        <text class="field-label">起飞时间</text>
+        <picker mode="time" value="{{form.depTime}}" data-field="depTime" bindchange="onTimeChange">
+          <view class="picker-value">{{form.depTime}}</view>
+        </picker>
+      </view>
+      <view class="field">
+        <text class="field-label">到达时间</text>
+        <picker mode="time" value="{{form.arrTime}}" data-field="arrTime" bindchange="onTimeChange">
+          <view class="picker-value">{{form.arrTime}}</view>
+        </picker>
+      </view>
+    </view>
+    <view class="field">
+      <text class="field-label">航班号</text>
+      <input class="input" placeholder="例如：CZ8954" value="{{form.flightNumber}}" data-field="flightNumber" bindinput="onInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">出发机场</text>
+      <input class="input" placeholder="例如：福州长乐国际机场" value="{{form.depAirport}}" data-field="depAirport" bindinput="onInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">出发航站楼（选填）</text>
+      <input class="input" placeholder="例如：T2" value="{{form.depTerminal}}" data-field="depTerminal" bindinput="onInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">到达机场</text>
+      <input class="input" placeholder="例如：北京大兴国际机场" value="{{form.arrAirport}}" data-field="arrAirport" bindinput="onInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">到达航站楼（选填）</text>
+      <input class="input" placeholder="例如：T2" value="{{form.arrTerminal}}" data-field="arrTerminal" bindinput="onInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">经停机场（选填）</text>
+      <input class="input" placeholder="例如：成都天府国际机场" value="{{form.stopover}}" data-field="stopover" bindinput="onInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">到达日期（跨天航班时填写）</text>
+      <picker mode="date" value="{{form.arrDate || form.date}}" bindchange="onArrDateChange">
+        <view class="picker-value">{{form.arrDate || form.date}}</view>
+      </picker>
+    </view>
+  </view>
+
+  <button class="btn-primary" bindtap="save" disabled="{{saving}}">{{saving ? '导入中…' : '导入航班'}}</button>
+</view>

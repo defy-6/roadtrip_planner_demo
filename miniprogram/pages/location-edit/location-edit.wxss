@@ -4,3 +4,6 @@
 .input { border: 1rpx solid #d6d9de; border-radius: 12rpx; padding: 18rpx 20rpx; background: #fff; }
 .textarea { min-height: 140rpx; }
 .actions { display: grid; grid-template-columns: 1fr 2fr; gap: 20rpx; margin-top: 24rpx; }
+.poi-card { margin-top: 20rpx; }
+.poi-line { display: flex; gap: 16rpx; padding: 8rpx 0; font-size: 26rpx; }
+.poi-key { color: #5a6472; flex: 0 0 auto; }

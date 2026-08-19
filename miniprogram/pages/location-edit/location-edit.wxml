@@ -22,6 +22,15 @@
     </view>
   </view>
 
+  <view class="card poi-card" wx:if="{{poiSummary}}">
+    <view class="section-title">POI 信息（只读，来自高德）</view>
+    <view class="poi-line" wx:if="{{poiSummary.openTime}}"><text class="poi-key">营业时间</text><text>{{poiSummary.openTime}}</text></view>
+    <view class="poi-line" wx:if="{{poiSummary.rating}}"><text class="poi-key">评分</text><text>{{poiSummary.rating}}</text></view>
+    <view class="poi-line" wx:if="{{poiSummary.referenceCost}}"><text class="poi-key">参考费用</text><text>{{poiSummary.referenceCost}}</text></view>
+    <view class="poi-line" wx:if="{{poiSummary.ticketPrice}}"><text class="poi-key">门票</text><text>{{poiSummary.ticketPrice}}</text></view>
+    <view class="poi-line" wx:if="{{poiSummary.tags}}"><text class="poi-key">标签</text><text>{{poiSummary.tags}}</text></view>
+  </view>
+
   <view class="actions">
     <button class="btn-ghost" wx:if="{{!isNew}}" bindtap="remove" disabled="{{saving}}">删除</button>
     <button class="btn-primary" bindtap="save" disabled="{{saving}}">{{saving ? '保存中…' : '保存'}}</button>

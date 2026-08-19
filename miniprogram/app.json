@@ -5,13 +5,19 @@
     "pages/trip/trip",
     "pages/event-edit/event-edit",
     "pages/location-edit/location-edit",
-    "pages/expense/expense"
+    "pages/expense/expense",
+    "pages/flight-import/flight-import"
   ],
   "window": {
     "navigationBarTitleText": "行远途记",
     "navigationBarBackgroundColor": "#f7f8fa",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f7f8fa"
+  },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于在地图上显示并定位您的当前位置"
+    }
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",

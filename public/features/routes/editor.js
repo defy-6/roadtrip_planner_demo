@@ -1,5 +1,6 @@
 // 路线节点编辑：左侧节点表单的创建、字段同步与内联路线/地点操作。
 // 事件编辑器通过 openScheduleEditor 回调打开；地点库通过 confirmNewPlace 回调新增。
+import { compressImageFile } from '../../core/utils.js';
 export function createRouteEditor({
   state, $, template, itemsEl, values, escapeHtml,
   renderSchedule, renderManualSchedule, applyDayFilter,
@@ -17,7 +18,14 @@ export function createRouteEditor({
     $('.name', node).value = data.name || ''; $('.address', node).value = data.address || ''; $('.note', node).value = data.note || '';
     if (data.photo) { const p=$('.preview',node);p.src=data.photo;p.hidden=false; }
     $('.delete', node).onclick = () => { node.remove(); save(); renderManualSchedule(); };
-    $('.photo', node).onchange = e => { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{const p=$('.preview',node);p.src=r.result;p.hidden=false;save()}; r.readAsDataURL(f); };
+    $('.photo', node).onchange = async e => {
+      const f = e.target.files[0]; if (!f) return;
+      let url;
+      try { url = await compressImageFile(f); }
+      catch { url = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(f); }); }
+      const p = $('.preview', node); p.src = url; p.hidden = false;
+      save();
+    };
     const locate = document.createElement('button'); locate.type = 'button'; locate.className = 'map-focus'; locate.textContent = '在地图中查看';
     locate.onclick = event => { event.stopPropagation(); const index = Number(node.dataset.scheduleIndex); if (Number.isInteger(index)) focusScheduleEvent(index); else focusNode(node); };
     $('.item-main', node).append(locate);

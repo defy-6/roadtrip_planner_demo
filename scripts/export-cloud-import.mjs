@@ -44,9 +44,13 @@ const member = {
 
 writeFileSync(path.join(outDir, 'trips.jsonl'), JSON.stringify(trip) + '\n');
 writeFileSync(path.join(outDir, 'trip_members.jsonl'), JSON.stringify(member) + '\n');
+// 数组格式（控制台「导入」最通用，一次一条记录）
+writeFileSync(path.join(outDir, 'trips.json'), JSON.stringify([trip], null, 2));
+writeFileSync(path.join(outDir, 'trip_members.json'), JSON.stringify([member], null, 2));
 
 console.log(`已生成导入文件（owner=${ownerId}）：
   行程: ${name}（trip_id=${tripId}，数据 ${Math.round(JSON.stringify(data).length / 1024)} KB）
   目录: work/cloud-import/
-    trips.jsonl         → 导入到「trips」集合
-    trip_members.jsonl  → 导入到「trip_members」集合`);
+    trips.json / trips.jsonl         → 导入到「trips」集合
+    trip_members.json / trip_members.jsonl  → 导入到「trip_members」集合
+  优先用 .json（数组格式），控制台不认再试 .jsonl`);
