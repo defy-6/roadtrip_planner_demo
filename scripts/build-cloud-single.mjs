@@ -35,15 +35,14 @@ const http = require('node:http');
 
 // ---------- store.js ----------
 const storeBody = readFiltered('store.js', {
-  dropStartsWith: ["const fs = require('node:fs');", "const path = require('node:path');", "const crypto = require('node:crypto');", 'const COLLECTIONS'],
-  dropExact: ["module.exports = { createStore, COLLECTIONS };"],
+  dropStartsWith: ["const fs = require('node:fs');", "const path = require('node:path');", "const crypto = require('node:crypto');", 'const COLLECTIONS', 'module.exports ='],
 });
 const storeBlock = `// ===== store.js（内联） =====
 const storeModule = (() => {
   const fs = require('node:fs');
   const path = require('node:path');
   const crypto = require('node:crypto');
-  const COLLECTIONS = ['users', 'sessions', 'trips', 'trip_members'];
+  const COLLECTIONS = ['users', 'sessions', 'trips', 'trip_members', 'trip_backups'];
 ${storeBody}
   return { createStore, COLLECTIONS };
 })();
@@ -76,12 +75,30 @@ ${authBody}
 
 `;
 
+// ---------- backup-format.js ----------
+const backupFormatBody = readFiltered('backup-format.js', {
+  dropStartsWith: ["'use strict';", "const crypto = require('node:crypto');", "const { supportedSchema } = require('./trip-write-safety');", 'module.exports = {'],
+});
+const backupFormatBlock = `// ===== backup-format.js（内联） =====
+const backupFormatModule = (() => {
+  const { supportedSchema } = tripWriteSafetyModule;
+  const crypto = require('node:crypto');
+${backupFormatBody}
+  return { BACKUP_FORMAT_VERSION, stableStringify, computeIntegrity, summarizeAssets, sourceVersionOf, buildBackupEnvelope, verifyBackupEnvelope, validateBackupContent };
+})();
+
+`;
+
 // ---------- routes/trips.js ----------
+const safetyBody = readFiltered('trip-write-safety.js', { dropStartsWith: ['module.exports ='] });
+const safetyBlock = `const tripWriteSafetyModule = (() => {\n${safetyBody}\nreturn { nextRevision, versionConflict, guardVersion, libraryChange, supportedSchema, hasPlannerData };\n})();\n`;
 const tripsBody = readFiltered(path.join('routes', 'trips.js'), {
-  dropExact: ["module.exports = { createTripsRoutes };"],
+  dropExact: ["module.exports = { createTripsRoutes };", "const backupFormat = require('../backup-format');", "const { nextRevision, versionConflict, guardVersion, libraryChange, supportedSchema, hasPlannerData } = require('../trip-write-safety');"],
 });
 const tripsBlock = `// ===== routes/trips.js（内联） =====
 const tripsModule = (() => {
+  const backupFormat = backupFormatModule;
+  const { nextRevision, versionConflict, guardVersion, libraryChange, supportedSchema, hasPlannerData } = tripWriteSafetyModule;
 ${tripsBody}
   return { createTripsRoutes };
 })();
@@ -125,7 +142,7 @@ const security = securityModule;
 ${indexBody}
 `;
 
-const bundle = header + storeBlock + securityBlock + authBlock + tripsBlock + amapBlock + indexBlock;
+const bundle = header + storeBlock + securityBlock + safetyBlock + backupFormatBlock + authBlock + tripsBlock + amapBlock + indexBlock;
 
 writeFileSync(path.join(out, 'index.js'), bundle);
 writeFileSync(path.join(out, 'package.json'), JSON.stringify({

@@ -1,0 +1,15 @@
+/* Plan creation and deletion share one compact form; deletion supplies the danger state. */
+html[data-preview-mode="mobile"] :is(#tripRenameDialog, #planDialog) :is(h3, .editor-actions) {
+  background: var(--ui-surface) !important;
+  backdrop-filter: none !important;
+}
+html[data-preview-mode="mobile"] #planDialog.is-danger-mode #planDialogHint {
+  border: 1px solid var(--ui-status-error-border) !important;
+  background: var(--ui-status-error-bg) !important;
+  color: var(--ui-status-error-text) !important;
+}
+html[data-preview-mode="mobile"] #planDialog.is-danger-mode #planDialogSubmit {
+  border-color: var(--ui-danger) !important;
+  background: var(--ui-danger) !important;
+  color: #fff !important;
+}

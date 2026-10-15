@@ -1,5 +1,7 @@
 // 事件编辑器：新建/编辑时间表事件，保存回云端 schedule
-const { request } = require('../../utils/request');
+const { request, resetTripRevision } = require('../../utils/request');
+const { isVersionConflict, resolveVersionConflict } = require('../../utils/conflict');
+const { offerRestore, withDraftLifecycle } = require('../../utils/drafts');
 
 const TYPES = [
   { value: 'spot', label: '景点' },
@@ -29,7 +31,7 @@ const STRATEGIES = [
   { value: '6', label: '大路优先' },
 ];
 
-Page({
+Page(withDraftLifecycle({
     data: {
     id: '',
     index: -1,
@@ -59,10 +61,11 @@ Page({
       const typeIndex = Math.max(0, TYPES.findIndex(t => t.value === options.type));
       this.setData({ typeIndex, 'form.type': options.type });
     }
-    this.load();
+    this.load().then(() => offerRestore(this, this.data.id));
   },
 
   async load() {
+    resetTripRevision(this.data.id);
     try {
       const [schRes, locRes] = await Promise.all([
         request(`/api/trips/${this.data.id}/schedule`),
@@ -117,8 +120,10 @@ Page({
       } else if (!this.data.form.date) {
         this.setData({ 'form.date': new Date().toISOString().slice(0, 10) });
       }
+      return true;
     } catch (err) {
       this.setData({ error: err.message });
+      return false;
     }
   },
 
@@ -255,6 +260,16 @@ Page({
     }
   },
 
+  // 冲突处置：保留冲突码，交由用户显式选择；"重新加载"返回上一页以拉取云端最新时间表，
+  // 绝不把这次本地编辑静默覆盖到云端（也绝不静默丢弃本地草稿）。
+  async handleConflict(err) {
+    if (!isVersionConflict(err)) return false;
+    this.setData({ saving: false, error: '' });
+    const reloaded = await resolveVersionConflict({ error: err, onReload: () => wx.navigateBack() });
+    if (!reloaded) wx.showToast({ title: '已保留本次编辑，请稍后重试', icon: 'none' });
+    return true;
+  },
+
   async save() {
     const { id, index, isNew, form, saving } = this.data;
     if (saving) return;
@@ -303,6 +318,7 @@ Page({
       wx.showToast({ title: '已保存', icon: 'success' });
       setTimeout(() => wx.navigateBack(), 500);
     } catch (err) {
+      if (await this.handleConflict(err)) return;
       this.setData({ saving: false, error: err.message });
     }
   },
@@ -322,9 +338,10 @@ Page({
           wx.showToast({ title: '已删除', icon: 'success' });
           setTimeout(() => wx.navigateBack(), 500);
         } catch (err) {
+          if (await this.handleConflict(err)) return;
           this.setData({ saving: false, error: err.message });
         }
       },
     });
   },
-});
+}, 'schedule'));

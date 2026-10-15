@@ -1,4 +1,62 @@
-@media(max-width:980px){
-html[data-preview-mode="mobile"] body[data-mobile-view] .mobile-plans-panel{display:none}html[data-preview-mode="mobile"] body[data-mobile-view="plans"] .mobile-plans-panel{display:grid;gap:12px;width:100%;margin:68px 0 0;padding:0 4px 18px}
-html[data-preview-mode="mobile"] .mobile-action-card,html[data-preview-mode="mobile"] .mobile-current-plan{overflow:hidden;border:1px solid #e0e4df;border-radius:13px;background:#fff;color:var(--mobile-ink)}html[data-preview-mode="mobile"] .mobile-current-plan{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px}html[data-preview-mode="mobile"] .mobile-current-plan b,html[data-preview-mode="mobile"] .mobile-current-plan small{display:block}html[data-preview-mode="mobile"] .mobile-current-plan small{margin-top:4px;color:#6e7772;font-size:11px}html[data-preview-mode="mobile"] .mobile-plan-cover{display:grid;width:64px;height:52px;place-items:center;border-radius:9px;background:#a8c7ae;color:#fff}html[data-preview-mode="mobile"] .mobile-action-card h3{margin:0;padding:11px 14px 7px;color:#39463f;font-size:13px}html[data-preview-mode="mobile"] .mobile-action-card button{display:grid;grid-template-columns:26px minmax(0,1fr) auto;align-items:center;width:100%;height:48px;padding:0 14px;border:0;border-top:1px solid #eceeea;background:#fff;color:var(--mobile-ink)!important;text-align:left;font-size:14px}html[data-preview-mode="mobile"] .mobile-action-card button span{color:var(--mobile-green)}html[data-preview-mode="mobile"] .mobile-action-card button i{color:#89918c;font-style:normal}html[data-preview-mode="mobile"] .mobile-action-card button.is-danger,html[data-preview-mode="mobile"] .mobile-action-card button.is-danger span{color:#c7352c!important}html[data-preview-mode="mobile"] .mobile-plan-list button.is-current{color:var(--mobile-green)!important;font-weight:700}
+/* Plans workspace: page layout and plan-specific action collections. */
+html[data-preview-mode="mobile"] body[data-mobile-view] .mobile-plans-panel { display: none; }
+html[data-preview-mode="mobile"] body[data-mobile-view="plans"] main {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  overscroll-behavior: contain !important;
+  padding-bottom: 78px !important;
 }
+html[data-preview-mode="mobile"] body[data-mobile-view="plans"] .app-header {
+  flex-shrink: 0;
+}
+html[data-preview-mode="mobile"] body[data-mobile-view="plans"] .mobile-plans-panel {
+  display: grid;
+  align-content: start !important;
+  grid-template-rows: none !important;
+  grid-auto-rows: max-content !important;
+  width: auto !important;
+  flex: 1 1 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  gap: var(--mobile-section-gap, 16px) !important;
+  margin: 16px 0 0 !important;
+  padding: 0 0 96px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  scrollbar-width: thin;
+  overscroll-behavior: contain !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel :is(.mobile-current-plan, .mobile-action-card) {
+  width: 100% !important;
+  min-height: max-content;
+  margin: 0 !important;
+  overflow: hidden;
+  border: 1px solid var(--mobile-line) !important;
+  border-radius: var(--mobile-card-radius, 16px) !important;
+  background: #fff;
+  box-shadow: 0 7px 22px #13251c12 !important;
+  color: var(--mobile-ink);
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-current-plan { min-height: 74px !important; padding: 12px !important; }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-current-plan:focus-visible { outline: 2px solid var(--mobile-green) !important; outline-offset: -3px !important; }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-current-plan :is(b, small) { display: block; }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-current-plan small { margin-top: 4px; color: #6e7772; font-size: var(--ui-meta, 11px) !important; line-height: var(--ui-leading-body, 1.45) !important; }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-action-card h3 { display: flex !important; min-height: 46px !important; align-items: center !important; margin: 0; padding: 0 14px !important; color: #39463f; font-size: var(--ui-section-title, 13px) !important; line-height: var(--ui-leading-section, 1.3) !important; }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-action-card h3 small { margin-left: 6px; color: var(--ui-muted); font-size: var(--ui-label, 9px) !important; font-weight: 500; }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-action-card button { display: grid; grid-template-columns: 28px minmax(0, 1fr) 18px !important; align-items: center; width: 100%; height: 44px !important; min-height: 44px !important; padding: 0 14px !important; border: 0; border-top: 1px solid #eceeea; background: #fff; color: var(--mobile-ink) !important; font-size: 14px; text-align: left; }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-action-card button > span:first-child { display: inline-flex; flex: 0 0 24px; align-items: center; justify-content: center; color: var(--mobile-green); }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-action-card button > i { justify-self: end !important; color: #89918c; font-style: normal; }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-action-card button.is-danger,
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-action-card button.is-danger span { color: var(--ui-danger, #c7352c) !important; }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-action-card.mobile-plan-list > button,
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-action-card.mobile-plan-list [data-plan-value] { height: 48px !important; min-height: 48px !important; }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-action-card.mobile-plan-list > button.is-danger { background: #fff8f7 !important; }
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-plan-list button.is-current { color: var(--mobile-green) !important; font-weight: 700; }

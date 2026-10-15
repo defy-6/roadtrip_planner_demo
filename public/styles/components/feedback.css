@@ -1,0 +1,135 @@
+/* Shared transient and inline feedback. Feature styles own placement only. */
+.save-toast {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  z-index: 3000;
+  max-width: min(88vw, 520px);
+  padding: 9px 18px;
+  border: 1px solid #ffffff30;
+  border-radius: 999px;
+  background: #075b43eb;
+  color: #fff;
+  box-shadow: var(--ui-shadow-floating);
+  font: 600 13px/1.5 system-ui, sans-serif;
+  text-align: center;
+  transform: translateX(-50%);
+}
+.save-toast[hidden] { display: none !important; }
+.save-toast[data-tone="info"] { background: #315f73f2; }
+.save-toast[data-tone="warning"] { border-color: var(--ui-status-warning-border); background: #75501df2; }
+.save-toast[data-tone="error"] { border-color: var(--ui-status-error-border); background: #8f2f29f2; }
+.app-header .save-status[data-tone="warning"] { color: var(--ui-status-warning-text) !important; }
+.app-header .save-status[data-tone="error"] { color: var(--ui-status-error-text) !important; }
+
+.inline-operation-status {
+  display: block;
+  margin: 1px 0;
+  padding: 7px 9px;
+  border: 1px solid var(--ui-status-error-border);
+  border-radius: 8px;
+  background: var(--ui-status-error-bg);
+  color: var(--ui-status-error-text);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.inline-operation-status[hidden] { display: none !important; }
+.inline-operation-status[data-tone="info"] { border-color: var(--ui-status-info-border); background: var(--ui-status-info-bg); color: var(--ui-status-info-text); }
+.inline-operation-status[data-tone="success"] { border-color: var(--ui-status-success-border); background: var(--ui-status-success-bg); color: var(--ui-status-success-text); }
+
+/* Persistent feedback embedded in forms, cards, and page toolbars. */
+:where(
+  .place-query-status,
+  .editor-location-status,
+  #editorWeatherStatus,
+  .place-batch-status,
+  .schedule-feedback
+) {
+  border: 1px solid var(--ui-status-info-border);
+  background: var(--ui-status-info-bg);
+  color: var(--ui-status-info-text);
+  overflow-wrap: anywhere;
+}
+
+:where(
+  .place-query-status,
+  .editor-location-status,
+  #editorWeatherStatus,
+  .place-batch-status,
+  .schedule-feedback
+)[data-tone="success"] {
+  border-color: var(--ui-status-success-border);
+  background: var(--ui-status-success-bg);
+  color: var(--ui-status-success-text);
+}
+
+:where(.place-query-status, .place-batch-status, .schedule-feedback)[data-tone="warning"] {
+  border-color: var(--ui-status-warning-border);
+  background: var(--ui-status-warning-bg);
+  color: var(--ui-status-warning-text);
+}
+
+:where(
+  .place-query-status,
+  .editor-location-status,
+  #editorRouteStatus,
+  #editorWeatherStatus,
+  .place-batch-status,
+  .transport-import-status,
+  .editor-transport-status
+)[data-tone="error"],
+:where(.transport-import-status, .editor-transport-status) {
+  border-color: var(--ui-status-error-border);
+  background: var(--ui-status-error-bg);
+  color: var(--ui-status-error-text);
+  font-weight: 700;
+}
+
+.new-place-query .place-query-status,
+.editor-location-status {
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.new-place-query .place-query-status { flex: 1 0 100%; margin: 0; }
+.editor-location-status { display: block; width: 100%; margin-top: 8px; }
+
+.transport-import-status,
+.editor-transport-status {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--ui-status-error-border);
+  border-radius: var(--ui-radius-feedback);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+#editorRouteStatus[data-tone="error"] {
+  border: 1px solid var(--ui-status-error-border);
+  overflow-wrap: anywhere;
+}
+
+.place-batch-status,
+.schedule-feedback {
+  flex: 0 0 auto;
+  margin: 7px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+:where(
+  .place-query-status,
+  .editor-location-status,
+  .place-batch-status,
+  .schedule-feedback,
+  .transport-import-status,
+  .editor-transport-status
+)[hidden] {
+  display: none !important;
+}

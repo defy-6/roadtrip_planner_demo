@@ -1,7 +1,7 @@
 export function createPlansFeature({ state, select, deleteButton, escapeHtml, defaultPlanId }) {
   function normalizePlanContainer(raw = {}) {
     if (Array.isArray(raw.plans) && raw.plans.length) {
-      const plans = raw.plans.map(plan => ({ id: plan.id, name: plan.name || '未命名计划' })).filter(plan => plan.id);
+      const plans = raw.plans.map(plan => ({ id: plan.id, name: plan.name || '未命名方案' })).filter(plan => plan.id);
       const versions = Object.fromEntries(plans.map(plan => [plan.id, raw.versions?.[plan.id]]).filter(([, snapshot]) => snapshot));
       const activeVersion = versions[raw.activeVersion] ? raw.activeVersion : plans.find(plan => versions[plan.id])?.id;
       return { ...raw, plans, versions, activeVersion, sharedSchedule: {} };

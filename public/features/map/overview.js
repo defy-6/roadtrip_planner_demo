@@ -11,7 +11,6 @@ export function createMapOverview({
   },
   layers: { renderMapRouteLegend, drawFlightItinerary, addRouteDirectionArrows, addRouteSequenceBadge, mapPointStyle, photoCalloutScale, layoutPhotoCallouts, addSelectedPlacePhotoCallout },
   routes: { routeForScheduleEvent, normalizedTransportMode, normalizedTravelMode, driveTravelMeta, shareCorridor },
-  env: { ensureFlightAirportLinks },
   callbacks: { focusScheduleEvent, renderRouteTotals, save, setOverviewFocusOpacity }
 }) {
   function routeColorForDate(date) {
@@ -84,7 +83,6 @@ export function createMapOverview({
     const requestId = getDayOverviewRequestId();
     if (!map) return;
     renderMapRouteLegend(date);
-    if (!isShareMode) await ensureFlightAirportLinks();
     let routeLayer = getRouteLayer();
     if (routeLayer) { map.removeLayer(routeLayer); setRouteLayer(null); }
     map.closePopup();
@@ -98,8 +96,12 @@ export function createMapOverview({
     const customPointEntries = [];
     events.forEach(event => {
       if (event.locationId) { placeIds.add(event.locationId); if (!eventForPlace.has(event.locationId)) eventForPlace.set(event.locationId, event); }
-      if (event.type === 'flight') {
+      if (event.transportInfo?.kind === 'flight' || event.flightInfo) {
         [event.flightInfo?.departurePlaceId, event.flightInfo?.stopoverPlaceId, event.flightInfo?.arrivalPlaceId].filter(Boolean).forEach(id => { placeIds.add(id); if (!eventForPlace.has(id)) eventForPlace.set(id, event); });
+        return;
+      }
+      if (event.transportInfo?.kind === 'train') {
+        [event.transportInfo.departurePlaceId, event.transportInfo.arrivalPlaceId].filter(Boolean).forEach(id => { placeIds.add(id); if (!eventForPlace.has(id)) eventForPlace.set(id, event); });
         return;
       }
       if (event.type !== 'drive') return;
@@ -132,8 +134,8 @@ export function createMapOverview({
       const point = resolved.get(place.id); if (!point) return;
       const [lng, lat] = mapCoords(...point.split(',').map(Number));
       const event = eventForPlace.get(place.id);
-      if (event?.type !== 'flight') bounds.push([lat, lng]);
-      const isFlightPlace = event?.type === 'flight';
+      if (!(event?.transportInfo?.kind === 'flight' || event?.flightInfo)) bounds.push([lat, lng]);
+      const isFlightPlace = event?.transportInfo?.kind === 'flight' || Boolean(event?.flightInfo);
       const marker = L.circleMarker([lat, lng], mapPointStyle(place.type || event?.type, { radius: isFlightPlace ? 2.5 : 3.5, ...(isFlightPlace ? { pane: 'flightPane', className: 'flight-airport-marker' } : {}) })).bindPopup(`<b>${escapeHtml(place.name)}</b><br>${escapeHtml(place.address)}`).addTo(getMarkerLayer());
       if (event) marker.on('click', () => focusScheduleEvent(event.scheduleIndex));
     });
@@ -142,11 +144,11 @@ export function createMapOverview({
       const [lng, lat] = mapCoords(...point.split(',').map(Number)); bounds.push([lat, lng]);
       L.circleMarker([lat, lng], mapPointStyle('drive')).bindPopup(`<b>${escapeHtml(pointEntry.name || pointEntry.title || '自定义地点')}</b><br>${escapeHtml(pointEntry.address)}`).on('click', () => focusScheduleEvent(pointEntry.event.scheduleIndex)).addTo(getMarkerLayer());
     });
-    events.filter(event => event.type === 'flight').forEach(event => {
+    events.filter(event => event.transportInfo?.kind === 'flight' || event.flightInfo).forEach(event => {
       drawFlightItinerary(getDayOverviewLayer(), event, event.scheduleIndex);
     });
     const routeEvents = events.filter(event => event.type === 'drive').sort((first, second) => `${first.start || '99:99'}:${first.scheduleIndex}`.localeCompare(`${second.start || '99:99'}:${second.scheduleIndex}`));
-    let displayedRouteCount = events.filter(event => event.type === 'flight').length;
+    let displayedRouteCount = events.filter(event => event.transportInfo?.kind === 'flight' || event.flightInfo).length;
     let routeCacheChanged = false;
     const routeRenderRecords = [];
     for (const [routeIndex, event] of routeEvents.entries()) {
@@ -209,48 +211,51 @@ export function createMapOverview({
       });
     }
     routeRenderRecords.forEach((record, recordIndex) => {
-      const { latLngs, event, route, routeIndex } = record;
-      const visualOffset = Math.max(-12, Math.min(12, offsets[recordIndex]));
-      const overviewStyle = routeOverviewStyle(event.date, !date, routeIndex, routeRenderRecords.length);
-      // 所有高德原始点都保留；仅对较短的近距离路线整体平移以形成视觉分道。
-      const displayLatLngs = translateRouteForDisplay(latLngs, visualOffset);
-      const line = L.polyline(displayLatLngs, overviewStyle);
-      line._routeOverviewStyle = overviewStyle;
-      line._routeAllDates = !date;
-      line._routeOriginalLatLngs = latLngs;
-      line._routeVisualOffset = visualOffset;
-      line.on('mouseover', () => line.setStyle({ weight: Math.max(4, overviewRouteWeight(line._routeAllDates) + 2), opacity: 1 }));
-      line.on('mouseout', () => line.setStyle({ ...overviewStyle, weight: overviewRouteWeight(line._routeAllDates) }));
-      const selectRoute = clickEvent => {
-        if (clickEvent?.originalEvent) L.DomEvent.stop(clickEvent);
-        else clickEvent?.stopPropagation?.();
-        getDayOverviewLayer().eachLayer(layer => {
-          if (!layer._routeOverviewStyle || !layer.setStyle) return;
-          layer.getElement()?.classList.toggle('selected-map-route', layer === line);
-          layer.setStyle(layer === line
-            ? { ...layer._routeOverviewStyle, weight: overviewRouteWeight(layer._routeAllDates) + 3, opacity: 1 }
-            : { ...layer._routeOverviewStyle, opacity: .24 });
-        });
-        focusScheduleEvent(event.scheduleIndex, { skipDriveQuery: true });
-      };
-      line.on('click', selectRoute);
-      line.addTo(getDayOverviewLayer());
-      const lineElement = line.getElement();
-      lineElement?.classList.add('map-overview-route');
-      if (lineElement) lineElement.dataset.scheduleIndex = String(event.scheduleIndex);
-      lineElement?.addEventListener('pointerup', selectRoute);
-      // 触屏上不要强迫用户精准点中 4px 的可见线：用透明宽线扩大命中区，视觉仍由上面的真实路线承担。
-      const hitLine = L.polyline(displayLatLngs, { color: '#000', weight: 24, opacity: .001, interactive: true, smoothFactor: 0 });
-      hitLine.on('click', selectRoute);
-      hitLine.addTo(getDayOverviewLayer());
-      const hitElement = hitLine.getElement();
-      hitElement?.classList.add('map-route-hit');
-      if (hitElement) hitElement.dataset.scheduleIndex = String(event.scheduleIndex);
-      hitElement?.addEventListener('pointerup', selectRoute);
-      hitElement?.addEventListener('click', selectRoute);
-      line._routeArrowMarkers = addRouteDirectionArrows(displayLatLngs, overviewStyle.color, event, routeIndex);
-      if (date) line._routeSequenceBadge = addRouteSequenceBadge(displayLatLngs, overviewStyle.color, routeIndex + 1);
-      displayedRouteCount += 1;
+      // 单条路线绘制失败只跳过该条，绝不让整个地图的路线消失。
+      try {
+        const { latLngs, event, route, routeIndex } = record;
+        const visualOffset = Math.max(-12, Math.min(12, offsets[recordIndex]));
+        const overviewStyle = routeOverviewStyle(event.date, !date, routeIndex, routeRenderRecords.length);
+        // 所有高德原始点都保留；仅对较短的近距离路线整体平移以形成视觉分道。
+        const displayLatLngs = translateRouteForDisplay(latLngs, visualOffset);
+        const line = L.polyline(displayLatLngs, overviewStyle);
+        line._routeOverviewStyle = overviewStyle;
+        line._routeAllDates = !date;
+        line._routeOriginalLatLngs = latLngs;
+        line._routeVisualOffset = visualOffset;
+        line.on('mouseover', () => line.setStyle({ weight: Math.max(4, overviewRouteWeight(line._routeAllDates) + 2), opacity: 1 }));
+        line.on('mouseout', () => line.setStyle({ ...overviewStyle, weight: overviewRouteWeight(line._routeAllDates) }));
+        const selectRoute = clickEvent => {
+          if (clickEvent?.originalEvent) L.DomEvent.stop(clickEvent);
+          else clickEvent?.stopPropagation?.();
+          getDayOverviewLayer().eachLayer(layer => {
+            if (!layer._routeOverviewStyle || !layer.setStyle) return;
+            layer.getElement()?.classList.toggle('selected-map-route', layer === line);
+            layer.setStyle(layer === line
+              ? { ...layer._routeOverviewStyle, weight: overviewRouteWeight(layer._routeAllDates) + 3, opacity: 1 }
+              : { ...layer._routeOverviewStyle, opacity: .24 });
+          });
+          focusScheduleEvent(event.scheduleIndex, { skipDriveQuery: true });
+        };
+        line.on('click', selectRoute);
+        line.addTo(getDayOverviewLayer());
+        const lineElement = line.getElement();
+        lineElement?.classList.add('map-overview-route');
+        if (lineElement) lineElement.dataset.scheduleIndex = String(event.scheduleIndex);
+        lineElement?.addEventListener('pointerup', selectRoute);
+        // 触屏上不要强迫用户精准点中 4px 的可见线：用透明宽线扩大命中区，视觉仍由上面的真实路线承担。
+        const hitLine = L.polyline(displayLatLngs, { color: '#000', weight: 24, opacity: .001, interactive: true, smoothFactor: 0 });
+        hitLine.on('click', selectRoute);
+        hitLine.addTo(getDayOverviewLayer());
+        const hitElement = hitLine.getElement();
+        hitElement?.classList.add('map-route-hit');
+        if (hitElement) hitElement.dataset.scheduleIndex = String(event.scheduleIndex);
+        hitElement?.addEventListener('pointerup', selectRoute);
+        hitElement?.addEventListener('click', selectRoute);
+        line._routeArrowMarkers = addRouteDirectionArrows(displayLatLngs, overviewStyle.color, event, routeIndex);
+        if (date) line._routeSequenceBadge = addRouteSequenceBadge(displayLatLngs, overviewStyle.color, routeIndex + 1);
+        displayedRouteCount += 1;
+      } catch { /* 单条路线绘制失败不影响其余路线与地点。 */ }
     });
     // 图片气泡必须在 fitBounds 完成后再按屏幕坐标避让；否则缩放会让原本不相交的气泡重新重叠。
     const renderDayPhotoCallouts = () => {
@@ -260,9 +265,14 @@ export function createMapOverview({
       const renderedPhotoCallouts = new Set();
       const dayRouteLatLngs = routeRenderRecords.flatMap(record => record.latLngs);
       const photoScale = photoCalloutScale(true);
+      const previewPlaceIds = new Set(String($('#map')?.dataset.previewPlaceIds || '').split(',').filter(Boolean));
+      let previewPhotoUrls = new Set();
+      try { previewPhotoUrls = new Set(JSON.parse($('#map')?.dataset.previewPhotoUrls || '[]')); } catch { /* 无预览图片 */ }
       const photoEntries = places.flatMap(place => {
-        const location = resolved.get(place.id); if (!location || !place.photo) return [];
-        const [lng, lat] = mapCoords(...location.split(',').map(Number));
+        const resolvedLocation = resolved.get(place.id);
+        const photoUrl = place.photo ? new URL(place.photo, window.location.href).href : '';
+        if (!resolvedLocation || !place.photo || previewPlaceIds.has(place.id) || previewPhotoUrls.has(photoUrl)) return [];
+        const [lng, lat] = mapCoords(...resolvedLocation.split(',').map(Number));
         const calloutKey = place.id || `${lat.toFixed(6)},${lng.toFixed(6)}`;
         if (renderedPhotoCallouts.has(calloutKey)) return [];
         renderedPhotoCallouts.add(calloutKey);

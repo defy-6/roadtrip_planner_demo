@@ -4,10 +4,7 @@ export const minuteToClock = minute => `${String(Math.floor(minute / 60)).padSta
 export function escapeHtml(value) { const node = document.createElement('span'); node.textContent = value || ''; return node.innerHTML; }
 export const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 // 本地时区的今天（YYYY-MM-DD）：避免 toISOString() 取 UTC 日期在中国时区晚上错一天。
-export const localToday = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-};
+export const localToday = (timeZone = 'Asia/Shanghai') => zonedToday(timeZone);
 // 压缩图片文件为 dataURL：大图缩到最长边 maxSize 并以 JPEG 重新编码，
 // 避免手机原图 base64（数 MB~十几 MB）撑爆腾讯云 HTTP 网关请求体（约 5MB）导致 413 保存失败。
 // 绝不回退到未压缩的原图（那正是 413 的根源）：
@@ -72,3 +69,4 @@ function tryCompress(image, original, maxSize, quality, resolve, attempt = 0) {
     resolve(emptyDataUrl());
   }
 }
+import { zonedToday } from './time.js';

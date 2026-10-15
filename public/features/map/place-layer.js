@@ -23,7 +23,7 @@ export function createPlaceLayer({ getMap, placeTypeColor, escapeHtml }) {
     const point = map?.latLngToContainerPoint(latLng);
     if (!point) return 'top';
     const routePoints = routeLatLngs.map(routePoint => map.latLngToContainerPoint(routePoint));
-    const candidates = ['top', 'right', 'left', 'bottom'];
+    const candidates = ['top', 'right', 'left', 'bottom', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
     const placement = candidates.map((candidate, index) => {
       const box = calloutBox(point, candidate, compact, scale);
       const routeHits = routePoints.slice(1).reduce((count, routePoint, routeIndex) => count + Number(segmentTouchesBox(routePoints[routeIndex], routePoint, box)), 0);
@@ -37,34 +37,42 @@ export function createPlaceLayer({ getMap, placeTypeColor, escapeHtml }) {
   function layoutPhotoCallouts(entries, routeLatLngs = [], compact = false, scale = photoCalloutScale(compact)) {
     return calculatePhotoCalloutLayout(entries, routeLatLngs, { toPoint: point => getMap()?.latLngToContainerPoint(point), compact, scale });
   }
-  function addSelectedPlacePhotoCallout(layer, latLng, place, fallbackPhoto = '', occupied = [], routeLatLngs = [], compact = false, placementOverride = '', scale = photoCalloutScale(compact)) {
+  function addSelectedPlacePhotoCallout(layer, latLng, place, fallbackPhoto = '', occupied = [], routeLatLngs = [], compact = false, placementOverride = '', scale = photoCalloutScale(compact), preview = false) {
     const photo = place?.photo || fallbackPhoto;
     if (!photo) return;
     const placement = placementOverride || calloutPlacement(latLng, occupied, routeLatLngs, compact, scale);
     const iconFor = portrait => {
-      const width = (portrait ? (compact ? 64 : 84) : (compact ? 84 : 112)) * scale;
-      const height = (portrait ? (compact ? 84 : 112) : (compact ? 63 : 84)) * scale;
+      const width = (portrait ? (compact ? 54 : 72) : (compact ? 72 : 96)) * scale;
+      const height = (portrait ? (compact ? 72 : 96) : (compact ? 54 : 72)) * scale;
       const anchors = {
         top: [width / 2, height + 10], right: [-10, height / 2],
-        left: [width + 10, height / 2], bottom: [width / 2, -10]
+        left: [width + 10, height / 2], bottom: [width / 2, -10],
+        'top-left': [width + 10, height + 10], 'top-right': [-10, height + 10],
+        'bottom-left': [width + 10, -10], 'bottom-right': [-10, -10]
       };
       return L.divIcon({
         className: 'selected-place-photo-marker',
         iconSize: [width + 4 * scale, height + 4 * scale],
         iconAnchor: anchors[placement],
-        html: `<div class="map-place-photo-callout is-${placement} ${portrait ? 'is-portrait' : ''} ${compact ? 'is-compact' : ''}" style="--place-color:${placeTypeColor(place?.type)};width:${width}px;height:${height}px"><img src="${escapeHtml(photo)}" alt="${escapeHtml(place?.name || '地点')}图片"></div>`
+        html: `<div class="map-place-photo-callout is-${placement} ${portrait ? 'is-portrait' : ''} ${compact ? 'is-compact' : ''} ${preview ? 'is-preview-selected' : ''}" data-place-id="${escapeHtml(place?.id || '')}" style="--place-color:${placeTypeColor(place?.type)};width:${width}px;height:${height}px"><span class="map-place-photo-connector" aria-hidden="true"></span><img src="${escapeHtml(photo)}" alt="${escapeHtml(place?.name || '地点')}图片"></div>`
       });
     };
     const marker = L.marker(latLng, {
-      pane: 'photoCalloutPane',
+      pane: preview ? 'selectedPhotoCalloutPane' : 'photoCalloutPane',
       icon: iconFor(false),
-      interactive: false,
-      keyboard: false,
-      zIndexOffset: -200
+      interactive: Boolean(place?.id),
+      keyboard: Boolean(place?.id),
+      bubblingMouseEvents: false,
+      zIndexOffset: preview ? 1200 : -200
     }).addTo(layer);
+    if (place?.id) marker.on('click', event => {
+      if (event.originalEvent) L.DomEvent.stopPropagation(event.originalEvent);
+      window.dispatchEvent(new CustomEvent('mobile:placefocus', { detail: { placeId: place.id } }));
+    });
     const probe = new Image();
     probe.onload = () => { if (probe.naturalHeight > probe.naturalWidth) marker.setIcon(iconFor(true)); };
     probe.src = photo;
+    return marker;
   }
   return { mapPointStyle, selectedPointStyle, photoCalloutScale, calloutPlacement, layoutPhotoCallouts, addSelectedPlacePhotoCallout };
 }

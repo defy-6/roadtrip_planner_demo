@@ -1,9 +1,9 @@
 // 航班图层：绘制航班 OD 曲线、关联机场地点。
 // 地图实例与图层经 getter/setter 注入；机场解析复用 places/model 的 resolveFlightPlaces。
 export function createFlightLayer({
-  state, $, escapeHtml, mapCoords, markerColors, geocode, isShareMode, resolveFlightPlaces,
+  state, $, escapeHtml, mapCoords, markerColors, geocode, resolveFlightPlaces,
   getMap, getRouteLayer, setRouteLayer,
-  focusScheduleEvent, renderLocations, renderSchedule, save,
+  focusScheduleEvent,
   setOverviewFocusOpacity, fitSelectionWithDayContext
 }) {
   function flightCurveLatLngs(originLocation, destinationLocation) {
@@ -76,8 +76,8 @@ export function createFlightLayer({
     const normalized = value => String(value || '').replace(/国际|机场|红旗坡|伊犁|[\s·()（）]/g, '');
     let place = state.locations.find(item => item.name === name || item.resolved?.name === name);
     if (!place) place = state.locations.find(item => /机场/.test(`${item.name || ''}${item.resolved?.name || ''}`) && normalized(`${item.name}${item.resolved?.name}`)?.includes(normalized(name)));
-    if (!place) { place = { id: crypto.randomUUID(), type: 'flight', name, address: name, note: '航班机场（自动关联）' }; state.locations.push(place); }
-    if (/航班机场（自动关联）/.test(place.note || '') && place.type !== 'flight') { place.type = 'flight'; place._airportTypeChanged = true; }
+    if (!place) { place = { id: crypto.randomUUID(), type: 'transport', name, address: name, note: '航班机场（自动关联）' }; state.locations.push(place); }
+    if (/航班机场（自动关联）/.test(place.note || '') && place.type !== 'transport') { place.type = 'transport'; place._airportTypeChanged = true; }
     if (!place.resolved?.location) {
       const point = await geocode(place.address || name, name);
       place.resolved = { name: point.name || name, address: point.formatted_address || place.address || name, location: point.location };
@@ -87,7 +87,7 @@ export function createFlightLayer({
   }
 
   async function linkFlightAirports(entry) {
-    if (entry?.type !== 'flight' || !entry.flightInfo) return false;
+    if (entry?.transportInfo?.kind !== 'flight' || !entry.flightInfo) return false;
     const [originPlace, stopoverPlace, destinationPlace] = await Promise.all([
       ensureAirportPlace(entry.flightInfo.departureAirport),
       entry.flightInfo.stopoverAirport ? ensureAirportPlace(entry.flightInfo.stopoverAirport) : null,
@@ -103,26 +103,43 @@ export function createFlightLayer({
     return changed;
   }
 
-  let flightAirportLinking;
-  async function ensureFlightAirportLinks() {
-    if (isShareMode) return;
-    if (flightAirportLinking) return flightAirportLinking;
-    flightAirportLinking = (async () => {
-      let changed = false;
-      for (const entry of state.schedule.filter(item => item.type === 'flight')) {
-        try { changed = await linkFlightAirports(entry) || changed; }
-        catch { /* 单个机场查询失败时保留航班，之后可再次自动补齐。 */ }
-      }
-      if (changed) { renderLocations(); renderSchedule(state.schedule); save(); }
-    })().finally(() => { flightAirportLinking = null; });
-    return flightAirportLinking;
+  async function ensureStationPlace(name) {
+    if (!name) return null;
+    const normalized = value => String(value || '').replace(/火车站|高铁站|动车站|车站|站|[\s·()（）]/g, '');
+    let place = state.locations.find(item => item.name === name || item.resolved?.name === name);
+    if (!place) place = state.locations.find(item => {
+      const candidate = `${item.name || ''}${item.resolved?.name || ''}`;
+      return /站/.test(candidate) && normalized(candidate).includes(normalized(name));
+    });
+    if (!place) {
+      place = { id: crypto.randomUUID(), type: 'transport', name, address: name, note: '动车车站（自动关联）' };
+      state.locations.push(place);
+    }
+    if (!place.resolved?.location) {
+      const point = await geocode(place.address || name, name);
+      place.resolved = { name: point.name || name, address: point.formatted_address || place.address || name, location: point.location };
+      place.address ||= `${point.formatted_address || ''}${point.name || name}`;
+    }
+    return place;
+  }
+
+  async function linkTrainStations(entry) {
+    if (entry?.transportInfo?.kind !== 'train') return false;
+    const [departurePlace, arrivalPlace] = await Promise.all([
+      ensureStationPlace(entry.transportInfo.departureStation),
+      ensureStationPlace(entry.transportInfo.arrivalStation)
+    ]);
+    if (!departurePlace || !arrivalPlace) return false;
+    const changed = entry.transportInfo.departurePlaceId !== departurePlace.id || entry.transportInfo.arrivalPlaceId !== arrivalPlace.id;
+    entry.transportInfo.departurePlaceId = departurePlace.id;
+    entry.transportInfo.arrivalPlaceId = arrivalPlace.id;
+    return changed;
   }
 
   async function showFlightOnMap(index) {
     const map = getMap();
     const entry = state.schedule[index]; if (!entry?.flightInfo || !map) return;
     try {
-      if (!isShareMode) await linkFlightAirports(entry);
       const places = flightPlaces(entry);
       if (places.length < 2 || places.some(place => !place.resolved?.location)) throw new Error('机场位置尚未查询完成');
       let routeLayer = getRouteLayer();
@@ -137,9 +154,8 @@ export function createFlightLayer({
       const flight = entry.flightInfo;
       const itinerary = places.map((place, placeIndex) => placeIndex === 1 && places.length === 3 ? `${place.name}（经停 ${flight.stopoverArrivalTime || '--:--'}–${flight.stopoverDepartureTime || '--:--'}）` : place.name).join(' → ');
       $('#routeDetail').innerHTML = `<b>${escapeHtml(flight.flightNumber || entry.title)}</b><br>${escapeHtml(itinerary)}<br>${escapeHtml(entry.date)} ${escapeHtml(entry.start)} → ${escapeHtml(flight.arrivalDate || entry.date)} ${escapeHtml(entry.end)}${entry.detail ? `<small>${escapeHtml(entry.detail)}</small>` : ''}<small>浅黄色半透明线为分段航班 OD 示意曲线，不代表实际飞行航迹。</small>`;
-      save(); renderLocations();
     } catch (error) { $('#routeDetail').textContent = error.message || '暂时无法显示航班机场位置。'; }
   }
 
-  return { flightCurveLatLngs, drawFlightCurve, flightPlaces, drawFlightItinerary, ensureAirportPlace, linkFlightAirports, ensureFlightAirportLinks, showFlightOnMap };
+  return { flightCurveLatLngs, drawFlightCurve, flightPlaces, drawFlightItinerary, ensureAirportPlace, linkFlightAirports, ensureStationPlace, linkTrainStations, showFlightOnMap };
 }

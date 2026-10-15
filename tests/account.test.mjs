@@ -2,10 +2,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
+const accountModuleUrl = pathToFileURL(path.join(root, 'public', 'services', 'account.js')).href;
+const apiModuleUrl = pathToFileURL(path.join(root, 'public', 'services', 'api.js')).href;
 
 function memoryStorage() {
   const map = new Map();
@@ -73,7 +75,7 @@ function fakeApi(overrides = {}) {
 test('restore：无 token 返回 null，有 token 恢复用户并选定活动行程', async () => {
   const storage = memoryStorage();
   const api = fakeApi();
-  const { createAccount } = await import(path.join(root, 'public', 'services', 'account.js'));
+  const { createAccount } = await import(accountModuleUrl);
 
   const account = createAccount({ api, storage });
   assert.equal(await account.restore(), null, '无 token 不应登录');
@@ -90,7 +92,7 @@ test('restore：token 失效时清 token 并回退本地模式', async () => {
   const storage = memoryStorage();
   storage.setItem('roadtrip-token', 'expired');
   const api = fakeApi();
-  const { createAccount } = await import(path.join(root, 'public', 'services', 'account.js'));
+  const { createAccount } = await import(accountModuleUrl);
 
   const account = createAccount({ api, storage });
   assert.equal(await account.restore(), null);
@@ -101,7 +103,7 @@ test('restore：token 失效时清 token 并回退本地模式', async () => {
 test('login / register / logout 完整流转', async () => {
   const storage = memoryStorage();
   const api = fakeApi();
-  const { createAccount } = await import(path.join(root, 'public', 'services', 'account.js'));
+  const { createAccount } = await import(accountModuleUrl);
 
   const account = createAccount({ api, storage });
   await account.register('bob', 'pass123456');
@@ -118,7 +120,7 @@ test('login / register / logout 完整流转', async () => {
 test('createTrip / joinTrip 更新活动行程', async () => {
   const storage = memoryStorage();
   const api = fakeApi();
-  const { createAccount } = await import(path.join(root, 'public', 'services', 'account.js'));
+  const { createAccount } = await import(accountModuleUrl);
 
   const account = createAccount({ api, storage });
   storage.setItem('roadtrip-token', 'token1');
@@ -127,6 +129,28 @@ test('createTrip / joinTrip 更新活动行程', async () => {
   const trip = await account.createTrip('新行程', { name: '新行程' });
   assert.equal(account.getActiveTripId(), trip._id);
   assert.equal(storage.getItem('roadtrip-active-trip'), trip._id);
+});
+
+test('新账号没有行程时自动创建空白云端行程，不载入本地预设', async () => {
+  const storage = memoryStorage();
+  const created = [];
+  const api = fakeApi({ api: {
+    listTrips: async () => ({ trips: { mine: created.map(trip => ({ ...trip, role: 'owner' })), shared: [] } }),
+    createTrip: async ({ name, data }) => {
+      const trip = { _id: 'new-trip', name, data, owner_id: 'u1', role: 'owner', updated_at: '2026-08-20T00:00:00Z' };
+      created.push(trip); return { trip };
+    },
+  } });
+  const { createAccount } = await import(accountModuleUrl);
+  const account = createAccount({ api, storage });
+
+  await account.register('fresh-user', 'pass123456');
+
+  assert.equal(account.getActiveTripId(), 'new-trip');
+  assert.equal(created.length, 1);
+  assert.equal(created[0].data.plans.length, 1);
+  assert.deepEqual(created[0].data.versions[created[0].data.activeVersion].schedule, []);
+  assert.notEqual(created[0].data.plans[0].name, '新疆自驾游');
 });
 
 test('api 云分流：有活动行程走 trips API，否则走本地文件', async () => {
@@ -144,7 +168,7 @@ test('api 云分流：有活动行程走 trips API，否则走本地文件', asy
     throw new Error(`unexpected url ${url}`);
   };
   try {
-    const { createApi } = await import(path.join(root, 'public', 'services', 'api.js'));
+    const { createApi } = await import(apiModuleUrl);
     const api = createApi({ storage });
     assert.deepEqual((await api.getPlannerData()).data, { name: '本地行程' }, '未选行程时读本地');
     assert.equal(calls.at(-1).url, '/api/planner-data');
@@ -157,7 +181,7 @@ test('api 云分流：有活动行程走 trips API，否则走本地文件', asy
 
     const saved = await api.savePlannerData({ name: '保存' });
     assert.equal(saved.updatedAt, '2026-02-01T00:00:00Z', '云保存返回时间戳');
-    assert.equal(calls.at(-1).method, 'GET', '拆分保存末尾回读时间戳');
+    assert.equal(calls.at(-1).method, 'PUT', '保存采用本次提交返回版本，不能回读并采用其他写入者版本');
   } finally {
     delete globalThis.fetch;
   }
@@ -172,7 +196,7 @@ test('api 云分流：401 触发 onUnauthorized（非登录接口）', async () 
     json: async () => ({ ok: false, error: '未登录' }),
   });
   try {
-    const { createApi } = await import(path.join(root, 'public', 'services', 'api.js'));
+    const { createApi } = await import(apiModuleUrl);
     const api = createApi({ storage, onUnauthorized: () => { unauthorized += 1; } });
     api.setActiveTrip('t1');
     await assert.rejects(() => api.getPlannerData(), /未登录/);
@@ -196,7 +220,7 @@ test('api 云保存：超长路线折线先降采样，拆分请求保持在网�
     };
   };
   try {
-    const { createApi } = await import(path.join(root, 'public', 'services', 'api.js'));
+    const { createApi } = await import(apiModuleUrl);
     const api = createApi({ storage });
     api.setActiveTrip('t1');
     const polyline = Array.from({ length: 20_000 }, (_, index) => `${80 + index / 100_000},${40 + index / 100_000}`).join(';');
@@ -239,7 +263,7 @@ test('api 云保存：仅修改费用时不重复上传路线', async () => {
     };
   };
   try {
-    const { createApi } = await import(path.join(root, 'public', 'services', 'api.js'));
+    const { createApi } = await import(apiModuleUrl);
     const api = createApi({ storage });
     api.setActiveTrip('t1');
     await api.getPlannerData();
@@ -251,4 +275,21 @@ test('api 云保存：仅修改费用时不重复上传路线', async () => {
   } finally {
     delete globalThis.fetch;
   }
+});
+
+test('api 云保存：发现远端版本变化时停止覆盖并返回冲突', async () => {
+  const storage = memoryStorage();
+  let updatedAt = '2026-02-01T00:00:00Z';
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, method: options.method || 'GET' });
+    return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ ok: true, trip: { data: { activeVersion: 'v1', versions: { v1: { schedule: [] } } }, updated_at: updatedAt } }) };
+  };
+  try {
+    const { createApi } = await import(apiModuleUrl);
+    const api = createApi({ storage }); api.setActiveTrip('t1');
+    await api.getPlannerData(); updatedAt = '2026-02-01T00:01:00Z';
+    await assert.rejects(() => api.savePlannerData({ activeVersion: 'v1', versions: { v1: { schedule: [{ id: 'local' }] } } }), error => error.code === 'VERSION_CONFLICT');
+    assert.equal(calls.some(call => call.method === 'PUT'), false, '冲突时不得发出覆盖请求');
+  } finally { delete globalThis.fetch; }
 });

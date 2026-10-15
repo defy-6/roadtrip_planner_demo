@@ -1,0 +1,91 @@
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-current-plan {
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr) !important;
+  gap: 12px !important;
+  align-items: center;
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-plan-cover {
+  display: grid !important;
+  place-items: center;
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 12px !important;
+  background: #eaf4ee !important;
+  color: #003b22 !important;
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-current-plan b {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-current-plan small {
+  display: block;
+  margin: 4px 0;
+  font-size: 12px;
+  color: #526159;
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel [data-trip-context] {
+  overflow-wrap: anywhere;
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel [data-trip-context][hidden] {
+  display: none !important;
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-plan-browse {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ui-space-2);
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-plan-retry {
+  grid-column: 1 / -1;
+  min-height: var(--ui-control-height-touch);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-green);
+  font-size: var(--ui-body);
+  font-weight: 600;
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-plan-retry[hidden] { display: none !important; }
+html[data-preview-mode="mobile"] .mobile-current-plan .mobile-plan-load-status {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: var(--ui-meta);
+  line-height: var(--ui-leading-body);
+}
+html[data-preview-mode="mobile"] .mobile-plan-browse[inert] { opacity: .38; }
+html[data-preview-mode="mobile"] .mobile-plan-browse a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ui-control-height-touch);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-green);
+  font-size: var(--ui-body);
+  text-decoration: none;
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-action-card button > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  flex: 0 0 24px;
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-plan-option-name {
+  width: auto !important;
+  flex: 1 !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+html[data-preview-mode="mobile"] .mobile-plans-panel .mobile-plan-command-hint {
+  margin: 0;
+  padding: 0 14px 12px 52px;
+  color: #66706a;
+  font-size: 12px;
+  line-height: 1.5;
+}

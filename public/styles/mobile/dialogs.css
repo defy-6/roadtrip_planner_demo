@@ -1,42 +1,86 @@
-@media(max-width:980px){
-html[data-preview-mode="mobile"] #eventEditor .mobile-editor-types{display:grid;grid-template-columns:repeat(4,1fr);margin-bottom:10px;padding:3px;border:1px solid var(--mobile-line);border-radius:11px;background:#fff}html[data-preview-mode="mobile"] #eventEditor .mobile-editor-types button{height:40px;border:0;background:transparent}html[data-preview-mode="mobile"] #eventEditor .mobile-editor-types button.is-selected{background:var(--mobile-green);color:#fff;border-radius:8px}
-html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary>div{padding:10px 12px;border:1px solid var(--mobile-line);border-radius:11px;background:#fff}html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary .is-wide{grid-column:1/-1}
+@media all{
 html[data-preview-mode="mobile"] #eventEditor [hidden]{display:none!important}html[data-preview-mode="mobile"] #eventEditor #flightFields[hidden],html[data-preview-mode="mobile"] #eventEditor #routeEditorSection[hidden],html[data-preview-mode="mobile"] #eventEditor #eventLocationField[hidden]{display:none!important}html[data-preview-mode="mobile"] #eventEditor .editor-grid:not([hidden]){display:grid!important}html[data-preview-mode="mobile"] #eventEditor #flightFields:not([hidden]){display:grid!important;grid-template-columns:1fr 1fr!important}
-html[data-preview-mode="mobile"] #eventEditor{height:94dvh!important;max-height:94dvh!important}html[data-preview-mode="mobile"] #eventEditor .editor-form{height:100%!important;max-height:none!important;overflow-y:auto!important;padding-bottom:104px!important}html[data-preview-mode="mobile"] #eventEditor .editor-section[open]{overflow:visible!important}html[data-preview-mode="mobile"] #eventEditor .editor-section[open]>:not(summary){display:block!important;max-height:none!important;overflow:visible!important}html[data-preview-mode="mobile"] #eventEditor .editor-section[open] .editor-grid{display:grid!important;height:auto!important;max-height:none!important;overflow:visible!important}html[data-preview-mode="mobile"] #eventEditor .editor-actions{position:fixed!important;bottom:0!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-section[open]{overflow:visible!important}html[data-preview-mode="mobile"] #eventEditor .editor-section[open]>:not(summary){display:block!important;max-height:none!important;padding:8px!important;overflow:visible!important}html[data-preview-mode="mobile"] #eventEditor .editor-section[open] .editor-grid:not([hidden]){display:grid!important;height:auto!important;max-height:none!important;overflow:visible!important}html[data-preview-mode="mobile"] #eventEditor .editor-section[open] [hidden]{display:none!important}
 html[data-preview-mode="mobile"] #placeEditor #newPlaceCurrentPhotoImage{display:block;width:100%;height:210px;max-height:28dvh;object-fit:cover;border-radius:10px}html[data-preview-mode="mobile"] #universalPlaceDialog #universalPlaceList{display:grid;grid-template-columns:1fr;gap:9px}html[data-preview-mode="mobile"] #universalPlaceDialog .place-photo-preview{width:100%;height:160px;object-fit:cover}
 }
 /* Event editor sheet: its scroll container, header and actions are intentionally
    independent from the desktop dialog so mobile changes cannot affect web. */
-@media(max-width:980px){
-html[data-preview-mode="mobile"] #eventEditor{width:calc(100vw - 12px)!important;height:min(90dvh,760px)!important;max-height:min(90dvh,760px)!important;margin:auto 6px 0!important;border-radius:20px 20px 0 0!important}
-html[data-preview-mode="mobile"] #eventEditor .editor-form{display:block!important;height:100%!important;padding:22px 12px 90px!important;overflow-y:auto!important;scroll-padding:74px!important}
-html[data-preview-mode="mobile"] #eventEditor .editor-form h3{top:-22px!important;margin:-22px -12px 12px!important;padding:28px 12px 14px!important;font-size:18px!important}
-html[data-preview-mode="mobile"] #eventEditor .editor-form>.editor-grid:first-of-type{grid-template-columns:1fr 1fr!important;gap:8px!important;margin:0 0 8px!important;overflow:visible!important;border:0!important;background:transparent!important}
-html[data-preview-mode="mobile"] #eventEditor .editor-form>.editor-grid:first-of-type>label{display:grid!important;min-height:62px!important;padding:8px 10px!important;border:1px solid var(--mobile-line)!important;border-radius:10px!important;background:#fff!important}
+@media all{
+html[data-preview-mode="mobile"] #eventEditor{width:calc(100vw - 12px)!important;height:min(90dvh,760px)!important;max-height:min(90dvh,760px)!important;margin:auto 6px 0!important;border:0!important;border-radius:20px 20px 0 0!important;background:#fbfaf6!important;box-shadow:0 -12px 38px #17211d24!important}
 html[data-preview-mode="mobile"] #eventEditor .editor-form>.editor-grid:first-of-type>label:has(#editorType){display:none!important}
-html[data-preview-mode="mobile"] #eventEditor .editor-form>.editor-grid:first-of-type>label input{height:28px!important;text-align:left!important;font-size:13px!important}
-html[data-preview-mode="mobile"] #eventEditor .mobile-editor-types{display:flex!important;height:46px!important;margin:0 0 8px!important;padding:4px!important;gap:4px!important;overflow-x:auto!important;scroll-snap-type:x proximity;scrollbar-width:none}
 html[data-preview-mode="mobile"] #eventEditor .mobile-editor-types::-webkit-scrollbar{display:none}
-html[data-preview-mode="mobile"] #eventEditor .mobile-editor-types button{flex:0 0 auto!important;min-width:58px!important;height:36px!important;padding:0 11px!important;font-size:12px!important;scroll-snap-align:center}
 html[data-preview-mode="mobile"] #eventEditor .mobile-editor-types button[data-editor-type="service"],html[data-preview-mode="mobile"] #eventEditor .mobile-editor-types button[data-editor-type="supply"]{min-width:72px!important}
-html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;margin:0 0 8px!important}
-html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary>div{min-height:54px!important;padding:7px 9px!important}
-html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary .is-wide{display:none!important}
-html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary b{font-size:11px!important}
 html[data-preview-mode="mobile"] #eventEditor>form>label{display:grid!important;gap:4px!important;margin:0 0 8px!important;padding:8px 10px!important}
-html[data-preview-mode="mobile"] #eventEditor>form>label input,html[data-preview-mode="mobile"] #eventEditor>form>label textarea{min-height:36px!important;margin:0!important;padding:8px 9px!important;font-size:13px!important}
+html[data-preview-mode="mobile"] #eventEditor>form>label input,html[data-preview-mode="mobile"] #eventEditor>form>label textarea{min-height:36px!important;margin:0!important;padding:8px 9px!important;font-size:16px!important}
 html[data-preview-mode="mobile"] #eventEditor #editorNote{min-height:54px!important;max-height:84px!important}
-html[data-preview-mode="mobile"] #eventEditor .editor-section{margin:0 0 8px!important;border-radius:10px!important;overflow:hidden!important}
-html[data-preview-mode="mobile"] #eventEditor .editor-section summary{min-height:42px!important;padding:8px 11px!important}
 html[data-preview-mode="mobile"] #eventEditor .editor-section summary span{font-size:12px!important}
 html[data-preview-mode="mobile"] #eventEditor .editor-section summary small{overflow:hidden;font-size:9px!important;text-overflow:ellipsis;white-space:nowrap}
-html[data-preview-mode="mobile"] #eventEditor .editor-section[open]>:not(summary){padding:8px!important}
 html[data-preview-mode="mobile"] #eventEditor .editor-section[open] .editor-grid{grid-template-columns:1fr 1fr!important;gap:7px!important;margin:0!important;padding:0!important;border:0!important;background:transparent!important}
 html[data-preview-mode="mobile"] #eventEditor .editor-section[open] .editor-grid>label{min-height:66px!important;padding:8px 9px!important;border:1px solid var(--mobile-line)!important;border-radius:10px!important;background:#fff!important}
-html[data-preview-mode="mobile"] #eventEditor .editor-section[open] .editor-grid>label input,html[data-preview-mode="mobile"] #eventEditor .editor-section[open] .editor-grid>label select{height:34px!important;margin:2px 0 0!important;padding:5px 6px!important;text-align:left!important;font-size:12px!important}
-html[data-preview-mode="mobile"] #eventEditor .editor-actions{left:6px!important;right:6px!important;padding:9px 12px calc(9px + env(safe-area-inset-bottom))!important;border-radius:0!important}
-html[data-preview-mode="mobile"] #eventEditor .editor-actions button{height:46px!important;padding:0 12px!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-section[open] .editor-grid>label input,html[data-preview-mode="mobile"] #eventEditor .editor-section[open] .editor-grid>label select{height:34px!important;margin:2px 0 0!important;padding:5px 6px!important;text-align:left!important;font-size:16px!important}
 }
-@media(max-width:980px){
+@media all{
 html[data-preview-mode="mobile"] #eventEditor .mobile-editor-map-preview{display:grid;grid-template-columns:112px 1fr;gap:12px;width:100%;margin:0 0 10px;padding:8px;border:1px solid var(--mobile-line);border-radius:12px;background:#fff;text-align:left;color:var(--mobile-green)}html[data-preview-mode="mobile"] #eventEditor .mobile-editor-map-preview[hidden]{display:none!important}html[data-preview-mode="mobile"] #eventEditor .mobile-editor-map-preview>span:last-child{display:grid;align-content:center;gap:3px;min-width:0}html[data-preview-mode="mobile"] #eventEditor .mobile-editor-map-preview small,html[data-preview-mode="mobile"] #eventEditor .mobile-editor-map-preview em{font-size:10px;font-style:normal;color:#6b756f}html[data-preview-mode="mobile"] #eventEditor .mobile-route-sketch{position:relative;display:block;height:66px;overflow:hidden;border-radius:8px;background:linear-gradient(145deg,#edf2e9,#dce8df)}html[data-preview-mode="mobile"] #eventEditor .mobile-route-sketch:before{content:'';position:absolute;inset:11px 8px;border:3px solid #2776dc;border-color:#2776dc transparent #2776dc #2776dc;border-radius:50% 35% 50% 30%;transform:rotate(-12deg)}html[data-preview-mode="mobile"] #eventEditor .mobile-route-sketch i{position:absolute;width:9px;height:9px;border:2px solid #fff;border-radius:50%;background:#08744f}html[data-preview-mode="mobile"] #eventEditor .mobile-route-sketch i:first-child{left:12px;bottom:13px}html[data-preview-mode="mobile"] #eventEditor .mobile-route-sketch i:last-child{right:13px;top:11px;background:#e33}
+}
+
+/* Event editor ownership: final sheet, controls, feedback and price-row contract. */
+html[data-preview-mode="mobile"] #universalPlaceDialog :is(h3, .editor-actions) { background:var(--ui-surface)!important;backdrop-filter:none!important; }
+html[data-preview-mode="mobile"] #universalPlaceDialog .editor-form > h3 { top:-26px!important; }
+html[data-preview-mode="mobile"] #universalPlaceDialog .editor-form { padding-bottom:0!important; }
+html[data-preview-mode="mobile"] #universalPlaceDialog .editor-actions { bottom:0!important;margin-bottom:0!important; }
+html[data-preview-mode="mobile"] .event-editor{width:100vw!important;height:min(92dvh,820px)!important;max-height:92dvh!important;margin:auto 0 0!important;padding:0!important;overflow:hidden!important;border-radius:20px 20px 0 0!important}
+html[data-preview-mode="mobile"] .event-editor::backdrop{background:#17211d88!important;backdrop-filter:blur(2px)}
+html[data-preview-mode="mobile"] .event-editor .editor-form{height:100%!important;display:flex!important;flex-direction:column!important;overflow-y:auto!important;overscroll-behavior:contain!important;padding-bottom:96px!important}
+html[data-preview-mode="mobile"] .event-editor .editor-form h3{text-align:center!important;font-size:20px!important;flex:0 0 auto!important}
+html[data-preview-mode="mobile"] .event-editor .editor-actions{position:sticky!important;bottom:-96px!important;flex:0 0 auto!important;margin-top:auto!important;padding-bottom:calc(12px + env(safe-area-inset-bottom))!important}
+html[data-preview-mode="mobile"] #eventEditor::before{content:'';position:absolute;top:9px;left:50%;z-index:3;width:42px;height:5px;transform:translateX(-50%);border-radius:999px;background:#c9ccc8}
+html[data-preview-mode="mobile"] #eventEditor .editor-form{display:block!important;height:100%!important;max-height:none!important;gap:0!important;padding:24px 14px 96px!important;overflow-y:auto!important;scroll-padding:74px!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-form h3{position:sticky!important;top:-24px!important;z-index:2;margin:-24px -14px 12px!important;padding:27px 14px 13px!important;border-bottom:1px solid var(--mobile-line)!important;background:var(--ui-surface)!important;font-size:max(18px,var(--ui-title,1.125rem))!important;line-height:1.25!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-grid{display:grid!important;grid-template-columns:1fr 1fr!important;gap:0!important;margin-bottom:10px!important;overflow:hidden;border:1px solid var(--mobile-line);border-radius:12px;background:#fff}
+html[data-preview-mode="mobile"] #eventEditor .editor-grid[hidden]{display:none!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-grid>label{min-width:0;padding:9px 11px!important;border-bottom:1px solid var(--mobile-line);font-size:12px!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-grid>label:nth-child(odd){border-right:1px solid var(--mobile-line)}
+html[data-preview-mode="mobile"] #eventEditor .editor-grid>label input,html[data-preview-mode="mobile"] #eventEditor .editor-grid>label select{height:32px!important;margin:3px 0 0!important;padding:0!important;border:0!important;background:transparent!important;text-align:right;font-size:16px!important}
+html[data-preview-mode="mobile"] #eventEditor label{margin:0 0 10px!important;padding:10px 12px!important;border:1px solid var(--mobile-line);border-radius:11px;background:#fff;font-size:clamp(12px,var(--ui-meta),16px)!important}
+html[data-preview-mode="mobile"] #eventEditor label>input,html[data-preview-mode="mobile"] #eventEditor label>textarea,html[data-preview-mode="mobile"] #eventEditor label>select{width:100%!important;margin-top:5px!important;border:0!important;background:#f6f6f2!important}
+html[data-preview-mode="mobile"] #eventEditor label:has(#editorType){display:none!important}
+html[data-preview-mode="mobile"] #eventEditor .mobile-editor-types{display:grid;height:auto!important;grid-template-columns:repeat(4,1fr);margin:0 0 10px!important;padding:3px!important;border:1px solid var(--ui-line)!important;border-radius:12px!important;background:#fff}
+html[data-preview-mode="mobile"] #eventEditor .mobile-editor-types button{flex:0 0 auto!important;min-width:58px!important;height:44px!important;padding:0;border:0;border-radius:10px!important;background:transparent;color:#4f5853;font-size:clamp(13px,.8125rem,16px)!important;scroll-snap-align:center}
+html[data-preview-mode="mobile"] #eventEditor .mobile-editor-types button.is-selected{background:var(--ui-green)!important;color:#fff;font-weight:700}
+html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;margin:0 0 8px!important}
+html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary>div{min-width:0;min-height:54px!important;padding:7px 9px!important;border:1px solid var(--mobile-line);border-radius:11px;background:#fff}
+html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary .is-wide{display:none!important}
+html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary small,html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary b{display:block}
+html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary small{margin-bottom:4px;color:#75807a;font-size:10px}
+html[data-preview-mode="mobile"] #eventEditor .mobile-editor-summary b{overflow:hidden;color:#20302a;font-size:11px!important;line-height:1.45;text-overflow:ellipsis;white-space:nowrap}
+html[data-preview-mode="mobile"] #eventEditor .editor-section{margin:0 0 10px!important;overflow:hidden!important;border:1px solid var(--mobile-line)!important;border-radius:11px!important;background:#fff!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-section summary{min-height:50px!important;padding:10px 12px!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-actions{position:fixed!important;left:0!important;right:0!important;bottom:0!important;z-index:4;display:grid!important;grid-template-columns:none!important;grid-auto-flow:column!important;grid-auto-columns:minmax(0,1fr)!important;gap:8px!important;margin:0!important;padding:10px 14px calc(10px + env(safe-area-inset-bottom))!important;border-top:1px solid var(--mobile-line)!important;border-radius:0!important;background:var(--ui-surface)!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-actions button{height:48px!important;margin:0!important;padding:0 12px!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-actions button[type="submit"]{background:var(--mobile-green)!important;color:#fff!important;font-weight:700!important}
+
+html[data-preview-mode="mobile"] #eventEditor .editor-form>.editor-grid:first-of-type{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:var(--ui-space-2)!important;margin:0 0 8px!important;overflow:visible!important;border:0!important;background:transparent!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-form>.editor-grid:first-of-type>label:has(#editorDate){grid-column:1/-1}
+html[data-preview-mode="mobile"] #eventEditor .editor-form>.editor-grid:first-of-type>label{display:grid!important;min-height:64px!important;padding:8px 9px!important;border:1px solid var(--mobile-line)!important;border-radius:var(--ui-radius-surface)!important;background:#fff!important;gap:2px!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-form>.editor-grid:first-of-type>label input{height:30px!important;min-height:30px!important;margin:2px 0 0!important;padding:0!important;background:transparent!important;text-align:left!important;font-size:clamp(15px,.9375rem,18px)!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-transport-status{width:100%!important;margin:var(--ui-space-2) 0!important;padding:var(--ui-space-2) 11px!important;border-radius:10px!important;font-size:var(--ui-meta)!important;line-height:1.4!important}
+html[data-preview-mode="mobile"] #eventEditor .editor-location-status{width:100%!important;margin:var(--ui-space-2) 0 0!important;padding:var(--ui-space-2) 10px!important;border-radius:9px!important;font-size:var(--ui-meta)!important;line-height:1.4!important}
+html[data-preview-mode="mobile"] #eventEditor #editorRouteStatus{margin:0!important;padding:var(--ui-space-2) 10px!important;border-radius:9px!important;font-size:var(--ui-meta)!important;line-height:1.4!important}
+html[data-preview-mode="mobile"] #eventEditor #editorWeatherStatus{margin:0 0 var(--ui-space-2)!important;padding:var(--ui-space-2) 10px!important;border-radius:9px!important;font-size:var(--ui-meta)!important;line-height:1.4!important}
+html[data-preview-mode="mobile"] .event-editor.compact-form-dialog{height:fit-content!important;min-height:0!important;max-height:calc(100dvh - 20px)!important}
+html[data-preview-mode="mobile"] .event-editor.compact-form-dialog .editor-form{height:fit-content!important;padding-bottom:0!important;overflow:visible!important}
+html[data-preview-mode="mobile"] .event-editor.compact-form-dialog .editor-actions{position:static!important;margin:14px -14px 0!important;padding:10px 14px calc(10px + env(safe-area-inset-bottom))!important;border-top:1px solid var(--ui-line)!important}
+
+html[data-preview-mode="mobile"] #eventEditor .editor-price-line{grid-template-columns:minmax(0,1fr) 72px minmax(0,1.5fr) 44px;gap:6px}
+html[data-preview-mode="mobile"] #eventEditor .editor-price-line[data-price-kind="shared"]{grid-template-columns:minmax(0,1fr) minmax(0,2fr) 44px}
+html[data-preview-mode="mobile"] #eventEditor .editor-price-line input,
+html[data-preview-mode="mobile"] #eventEditor .editor-price-line [data-remove-price]{height:44px}
+html[data-preview-mode="mobile"] #eventEditor .editor-price-line [data-remove-price]{width:44px;font-size:10px!important}
+html[data-preview-mode="mobile"] #eventEditor .schedule-editor-context {
+  margin: 0 0 var(--ui-space-3);
+  color: var(--ui-muted);
+  font-size: var(--ui-meta);
+  line-height: var(--ui-leading-body);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }

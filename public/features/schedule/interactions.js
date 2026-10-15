@@ -8,9 +8,9 @@ export function shiftScheduleEntries(schedule, indexes, minutes) {
   });
 }
 
-export function snapScheduleDrop(schedule, date, rawMinute, indexes = [], clockToMinute) {
+export function snapScheduleDrop(schedule, date, rawMinute, indexes = [], clockToMinute, { minMinute = 7 * 60, maxMinute = 22 * 60 + 55 } = {}) {
   const excluded = new Set(indexes.map(Number));
   const previousEnds = schedule.filter((entry, index) => entry.date === date && !excluded.has(index) && clockToMinute(entry.end || entry.start) <= rawMinute).map(entry => clockToMinute(entry.end || entry.start));
   const previousEnd = previousEnds.length ? Math.max(...previousEnds) : null;
-  return previousEnd !== null && rawMinute - previousEnd <= 45 ? previousEnd : Math.max(7 * 60, Math.min(22 * 60 + 55, Math.round(rawMinute / 5) * 5));
+  return previousEnd !== null && rawMinute - previousEnd <= 45 ? previousEnd : Math.max(minMinute, Math.min(maxMinute, Math.round(rawMinute / 5) * 5));
 }

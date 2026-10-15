@@ -5,10 +5,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { isolatedDataFile } from './helpers/temp-data.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
-const dataFile = path.join(root, 'work', 'cloud-call-test.json');
+// 合成数据改用进程独占的临时目录：并发或被中断的运行不会再争用 work/ 下的固定路径与同名锁。
+const dataFile = isolatedDataFile('cloud-call');
 
 process.env.LOCAL = '1';
 process.env.CLOUD_DEV_DATA = dataFile;

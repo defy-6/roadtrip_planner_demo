@@ -196,7 +196,10 @@
         <button class="btn-ghost plan-action" bindtap="openFlightImport" disabled="{{busy}}">✈ 导入航班</button>
       </block>
       <button class="btn-ghost plan-action" bindtap="openExpenses" disabled="{{busy}}">¥ 行程账本</button>
-      <button class="btn-ghost plan-action" bindtap="exportJson" disabled="{{busy}}">⇩ 导出 JSON</button>
+      <button class="btn-ghost plan-action" bindtap="exportJson" disabled="{{busy}}">⇩ 导出当前方案 JSON</button>
+      <button class="btn-ghost plan-action" bindtap="createFullBackup" disabled="{{busy}}" wx:if="{{isEditable}}">🗄 创建完整备份</button>
+      <button class="btn-ghost plan-action" bindtap="restoreFullBackup" disabled="{{busy}}" wx:if="{{role === 'owner'}}">↺ 恢复完整备份</button>
+      <view class="hint">“导出当前方案 JSON”只含当前方案，不是完整备份；完整备份包含全部方案、事件、费用、地点关联与路线。</view>
       <view class="hint" wx:if="{{!isEditable}}">只读分享：编辑类操作已禁用</view>
     </view>
   </block>

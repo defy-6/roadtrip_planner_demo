@@ -1,9 +1,11 @@
 // 行程账本：独立账目列表 + 添加/编辑/删除
-const { request } = require('../../utils/request');
+const { request, resetTripRevision } = require('../../utils/request');
+const { isVersionConflict, resolveVersionConflict } = require('../../utils/conflict');
+const { offerRestore, withDraftLifecycle } = require('../../utils/drafts');
 
 const CATEGORIES = ['餐饮', '住宿', '交通', '门票', '加油', '停车', '购物', '其他'];
 
-Page({
+Page(withDraftLifecycle({
   data: {
     id: '',
     groups: [],
@@ -23,10 +25,20 @@ Page({
     this.expenses = [];
     this.eventOptions = [{ index: -1, title: '不关联，保存为独立账目' }];
     this.setData({ id: options.id || '', eventOptions: this.eventOptions, eventSel: 0 });
-    this.load();
+    this.load().then(() => offerRestore(this, this.data.id));
+  },
+
+  // 冲突处置：保留冲突码，交由用户显式选择重新加载（丢弃本地）或保留本地，绝不静默覆盖。
+  async handleConflict(err) {
+    if (!isVersionConflict(err)) return false;
+    this.setData({ saving: false, error: '' });
+    const reloaded = await resolveVersionConflict({ error: err, onReload: () => this.load() });
+    wx.showToast({ title: reloaded ? '已加载云端最新数据' : '已保留本次改动，请重试', icon: 'none' });
+    return true;
   },
 
   async load() {
+    resetTripRevision(this.data.id);
     try {
       const [expRes, schRes] = await Promise.all([
         request(`/api/trips/${this.data.id}/expenses`),
@@ -42,8 +54,10 @@ Page({
       ];
       this.setData({ eventOptions: this.eventOptions, eventSel: 0 });
       this.render();
+      return true;
     } catch (err) {
       this.setData({ error: err.message });
+      return false;
     }
   },
 
@@ -146,30 +160,27 @@ Page({
       expenses.push({ id: `exp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`, ...record });
     }
     try {
-      await request(`/api/trips/${id}/expenses`, { method: 'PUT', data: { expenses } });
-      // 关联事件：把金额写入该事件的共同费用（对齐 web 行为）；失败则回滚账目
+      // Commit the expense and associated event in one versioned server operation.
+      // Never compensate a partial save by overwriting another client's expenses.
+      let schedule;
       if (selected.index >= 0) {
-        try {
-          const schRes = await request(`/api/trips/${id}/schedule`);
-          const schedule = schRes.schedule || [];
+          schedule = JSON.parse(JSON.stringify(this.scheduleEvents || []));
           const ev = schedule[selected.index];
           if (ev) {
             ev.priceInfo = ev.priceInfo || { perPersonItems: [], sharedItems: [] };
             ev.priceInfo.sharedItems = ev.priceInfo.sharedItems || [];
             ev.priceInfo.sharedItems.push({ note: record.category, amount });
             ev.price = Number(ev.price || 0) + amount;
-            await request(`/api/trips/${id}/schedule`, { method: 'PUT', data: { schedule } });
           }
-        } catch (err) {
-          await request(`/api/trips/${id}/expenses`, { method: 'PUT', data: this.expenses }).catch(() => {});
-          throw err;
-        }
       }
+      await request(`/api/trips/${id}/expenses`, { method: 'PUT', data: { expenses, ...(schedule ? { schedule } : {}) } });
+      if (schedule) this.scheduleEvents = schedule;
       this.expenses = expenses;
       this.setData({ saving: false, showForm: false, editId: '', eventSel: 0 });
       this.render();
       wx.showToast({ title: '已保存', icon: 'success' });
     } catch (err) {
+      if (await this.handleConflict(err)) return;
       this.setData({ saving: false, error: err.message });
     }
   },
@@ -188,9 +199,10 @@ Page({
           this.render();
           wx.showToast({ title: '已删除', icon: 'success' });
         } catch (err) {
+          if (await this.handleConflict(err)) return;
           this.setData({ error: err.message });
         }
       },
     });
   },
-});
+}, 'expenses'));

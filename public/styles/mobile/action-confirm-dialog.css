@@ -1,0 +1,32 @@
+/* Shared destructive confirmation stays compact above whichever editor invoked it. */
+html[data-preview-mode="mobile"] .action-confirm-dialog {
+  left: 12px !important;
+  right: 12px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 420px !important;
+  margin: auto !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  border-radius: 18px !important;
+}
+html[data-preview-mode="mobile"] .action-confirm-dialog .editor-form {
+  padding: 18px 16px 0 !important;
+  gap: 13px !important;
+}
+html[data-preview-mode="mobile"] .action-confirm-dialog .action-confirm-heading h3 {
+  position: static !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+html[data-preview-mode="mobile"] .action-confirm-dialog .editor-actions {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr) !important;
+}
+html[data-preview-mode="mobile"] .action-confirm-dialog .editor-actions button {
+  min-width: 0 !important;
+}
+html[data-preview-mode="mobile"] dialog.action-confirm-dialog .editor-actions [data-confirm-submit] {
+  border-color: var(--ui-danger) !important;
+  background: var(--ui-danger) !important;
+  color: #fff !important;
+}

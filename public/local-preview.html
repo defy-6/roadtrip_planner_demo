@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>行远 · 本地预览</title>
   <style>
     :root { color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -17,9 +17,36 @@
   </style>
 </head>
 <body>
-  <main class="stage"><iframe src="/index.html?preview=mobile" title="行远预览"></iframe></main>
+  <main class="stage"><iframe title="行远预览"></iframe></main>
   <span class="mode-badge" aria-live="polite">正在识别预览模式…</span>
   <script>
+    const previewFrame = document.querySelector('iframe');
+    const validViews = new Set(['schedule', 'map', 'places', 'plans']);
+    const currentView = () => {
+      const view = location.hash.replace(/^#\/?/, '');
+      return validViews.has(view) ? view : 'schedule';
+    };
+    const syncFrameView = () => {
+      const frameWindow = previewFrame.contentWindow;
+      if (!frameWindow) return;
+      const hash = `#${currentView()}`;
+      if (frameWindow.location.hash !== hash) frameWindow.location.hash = hash;
+    };
+
+    // 刷新预览时直接打开外层地址指定的页面，避免先按默认时间表完成一次布局。
+    previewFrame.src = `/index.html?preview=mobile#${currentView()}`;
+    previewFrame.addEventListener('load', () => {
+      // 应用自身会在启动时校验路由；等它注册完监听器后再次对齐，避免启动阶段的默认页覆盖外层路由。
+      syncFrameView();
+      requestAnimationFrame(syncFrameView);
+      previewFrame.contentWindow.addEventListener('mobile:viewchange', event => {
+        const view = event.detail?.view;
+        if (!validViews.has(view) || location.hash === `#${view}`) return;
+        history.replaceState(null, '', `#${view}`);
+      });
+    });
+    window.addEventListener('hashchange', syncFrameView);
+
     fetch('/api/preview-mode')
       .then(response => response.json())
       .then(({ mode }) => {

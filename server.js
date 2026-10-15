@@ -2,13 +2,14 @@ import express from 'express';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import cloudApi from './cloudfunctions/api/index.js';
+import { PlannerFile } from './server/planner-file.mjs';
 
 dotenv.config();
 const app = express();
 const root = path.dirname(fileURLToPath(import.meta.url));
-const cacheDir = path.join(root, '.cache');
+const cacheDir = process.env.AMAP_CACHE_DIR ? path.resolve(process.env.AMAP_CACHE_DIR) : path.join(root, '.cache');
 const cacheFile = path.join(cacheDir, 'amap-responses.json');
 const weatherCacheFile = path.join(cacheDir, 'weather-responses.json');
 const dataDir = path.join(root, 'data');
@@ -16,7 +17,7 @@ const dataDir = path.join(root, 'data');
 const plannerDataFile = process.env.PLANNER_DATA_FILE
   ? path.resolve(root, process.env.PLANNER_DATA_FILE)
   : path.join(dataDir, 'roadtrip-data.json');
-const plannerDataDir = path.dirname(plannerDataFile);
+const plannerFile = new PlannerFile(plannerDataFile);
 let amapCache = {};
 try { amapCache = JSON.parse(await readFile(cacheFile, 'utf8')); } catch { /* 首次启动尚无缓存 */ }
 let weatherCache = {};
@@ -303,7 +304,7 @@ app.get('/api/weather', async (req, res) => {
 
 let plannerDataWrite = Promise.resolve();
 app.get('/api/planner-data', async (req, res) => {
-  try { res.json({ data: JSON.parse(await readFile(plannerDataFile, 'utf8')) }); }
+  try { res.json(plannerFile.read()); }
   catch (error) { if (error.code === 'ENOENT') res.json({ data: null }); else res.status(500).json({ error: '无法读取本地行程文件' }); }
 });
 app.put('/api/planner-data', async (req, res) => {
@@ -312,26 +313,15 @@ app.put('/api/planner-data', async (req, res) => {
       res.status(403).json({ error: '手机预览为只读模式，请在桌面端修改行程' });
       return;
     }
-    const { baseUpdatedAt, ...payload } = req.body || {};
-    const savedAt = new Date().toISOString();
-    const data = { ...payload, updatedAt: savedAt, savedAt };
-    const writeTask = plannerDataWrite.then(async () => {
-      let current = null;
-      try { current = JSON.parse(await readFile(plannerDataFile, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      if (current?.updatedAt && (!baseUpdatedAt || baseUpdatedAt !== current.updatedAt)) {
-        const conflict = new Error('本地行程已被更新，请刷新页面后再保存');
-        conflict.statusCode = 409;
-        throw conflict;
-      }
-      await mkdir(plannerDataDir, { recursive: true });
-      const temporaryFile = `${plannerDataFile}.tmp`;
-      await writeFile(temporaryFile, JSON.stringify(data, null, 2), 'utf8');
-      await rename(temporaryFile, plannerDataFile);
-    });
+    const { baseUpdatedAt, baseLibraryRevision: _libraryRevision, ...payload } = req.body || {};
+    const origin = req.headers.origin;
+    if (origin && new URL(origin).host !== req.headers.host) {
+      res.status(403).json({ code: 'LOCAL_ORIGIN_REQUIRED', error: '本地文件不接受其他网站的写入' }); return;
+    }
+    const writeTask = plannerDataWrite.then(() => plannerFile.write(payload, baseUpdatedAt));
     plannerDataWrite = writeTask.catch(() => {});
-    await writeTask;
-    res.json({ ok: true, savedAt: data.savedAt, updatedAt: data.updatedAt });
-  } catch (error) { res.status(error.statusCode || 500).json({ error: error.message || '无法写入本地行程文件' }); }
+    res.json(await writeTask);
+  } catch (error) { res.status(error.statusCode || 500).json({ code: error.code || 'WRITE_FAILED', error: error.message || '无法写入本地行程文件' }); }
 });
 
 app.get('/api/preview-mode', (_req, res) => res.json({ mode: localPreviewMode }));

@@ -19,10 +19,14 @@ export function createSession({
   function setSnapshots(versions) { planSnapshots = structuredClone(versions || {}); }
   // 文件容器顶层通用库：独立于任何计划快照，载入计划时作为通用库基础而非被计划地点覆盖。
   function setUniversalCatalog(catalog) {
-    universalCatalog = { locations: catalog?.locations || [], routes: catalog?.routes || [] };
+    const normalizeType = place => place?.type === 'flight' ? { ...place, type: 'transport' } : ['service', 'fuel'].includes(place?.type) ? { ...place, type: 'supply' } : place;
+    universalCatalog = { locations: (catalog?.locations || []).map(normalizeType), routes: catalog?.routes || [] };
   }
   // 载入文件容器：登记计划目录、快照与顶层通用库，返回 normalized 容器供调用方继续取 active 快照。
+  let fileExtensions = {};
   function loadFileContainer(fileData) {
+    fileExtensions = structuredClone(fileData || {});
+    for (const key of ['plans', 'versions', 'activeVersion', 'locations', 'routes', 'sharedSchedule', 'updatedAt', 'baseUpdatedAt', 'baseLibraryRevision', 'sourceTripId', 'sourceActorScope']) delete fileExtensions[key];
     const normalized = setPlanCatalog(fileData);
     setSnapshots(normalized.versions || {});
     setUniversalCatalog(fileData);
@@ -56,6 +60,30 @@ export function createSession({
     return data;
   }
 
+  // 旧版轻量接口曾可能误把增量地点当成全量覆盖。若事件或路线仍引用缺失 ID，
+  // 从通用地点库按原 ID 补回，恢复详情的同时保持已有事件关联不变。
+  function restoreReferencedLocations(data) {
+    if (!data || isShareMode) return data;
+    const locations = Array.isArray(data.locations) ? data.locations : [];
+    const existingIds = new Set(locations.map(place => place?.id).filter(Boolean));
+    const referencedIds = new Set();
+    (data.schedule || []).forEach(event => {
+      [event.locationId, event.flightInfo?.departurePlaceId, event.flightInfo?.stopoverPlaceId, event.flightInfo?.arrivalPlaceId,
+        event.routeLinks?.originPlaceId, ...(event.routeLinks?.viaPlaceIds || []), event.routeLinks?.destinationPlaceId]
+        .filter(Boolean).forEach(id => referencedIds.add(id));
+    });
+    (data.routes || []).forEach(route => {
+      [route.originPlaceId, ...(route.viaPlaceIds || []), route.destinationPlaceId].filter(Boolean).forEach(id => referencedIds.add(id));
+    });
+    const universalById = new Map((universalCatalog?.locations || []).filter(place => place?.id).map(place => [place.id, place]));
+    referencedIds.forEach(id => {
+      const source = universalById.get(id);
+      if (!existingIds.has(id) && source) { locations.push(structuredClone(source)); existingIds.add(id); }
+    });
+    data.locations = locations;
+    return data;
+  }
+
   function readSharedSchedule() {
     if (isShareMode) return structuredClone(shareData?.sharedSchedule || {});
     return persistence.read(sharedScheduleStorageKey, {});
@@ -84,6 +112,7 @@ export function createSession({
   }
   function fileSavePayload() {
     return {
+      ...fileExtensions,
       activeVersion: state.versionKey,
       plans: state.plans,
       versions: Object.fromEntries(state.plans.map(plan => [plan.id, snapshotForPlan(plan.id)]).filter(([, snapshot]) => snapshot)),
@@ -94,10 +123,10 @@ export function createSession({
       baseUpdatedAt: getFileRevision()
     };
   }
-  function queueLocalFileSave() {
-    if (!isShareMode) persistence.queueFileSave(fileSavePayload);
+  function queueLocalFileSave(manual = false) {
+    if (!isShareMode) persistence.queueFileSave(fileSavePayload, manual ? 0 : 300, { manual });
   }
-  function currentSnapshot() { return { name: $('#tripName').value, items: [...itemsEl.children].map(values), schedule: state.schedule, expenses: state.expenses, locations: state.locations, routes: state.routes, placeCategories: state.placeCategories, preferences: state.preferences, placeModelVersion: 1, routeLinkModeVersion: 1, planKey: state.versionKey, updatedAt: new Date().toISOString() }; }
+  function currentSnapshot() { return { ...snapshotForPlan(state.versionKey), name: $('#tripName').value, items: [...itemsEl.children].map(values), schedule: state.schedule, expenses: state.expenses, locations: state.locations, routes: state.routes, placeCategories: state.placeCategories, preferences: state.preferences, schemaVersion: 4, placeModelVersion: 1, placeCategoryVersion: 2, routeLinkModeVersion: 1, planKey: state.versionKey, updatedAt: new Date().toISOString() }; }
   function restorePlannerState(raw) {
     const data = JSON.parse(raw);
     selectedIndexes.clear();
@@ -110,14 +139,15 @@ export function createSession({
     save();
   }
 
-  function save() {
+  function save({ manual = false } = {}) {
     if (isShareMode) return;
     (state.locations || []).forEach(syncPlaceToUniversal);
     // UI history must not depend on the asynchronous file autosave lifecycle.
     // A drag can happen immediately after load; it still needs to be undoable.
     history.commit();
+    const snapshot = currentSnapshot(); storePlanSnapshot(state.versionKey, snapshot);
     if (!persistence.autoSaveEnabled) return;
-    writeSharedSchedule(); const snapshot = currentSnapshot(); storePlanSnapshot(state.versionKey, snapshot); queueLocalFileSave();
+    writeSharedSchedule(); queueLocalFileSave(manual);
   }
 
   function mergeUniversalLocations(data) {
@@ -135,7 +165,7 @@ export function createSession({
   }
 
   function load(rawData, versionKey = rawData.planKey || defaultPlanId) {
-    const data = repairEventNamedLocations(mergeUniversalRoutes(mergeUniversalLocations(migrate(rawData, typeForTitle))));
+    const data = repairEventNamedLocations(restoreReferencedLocations(mergeUniversalRoutes(mergeUniversalLocations(migrate(rawData, typeForTitle)))));
     state.versionKey = state.plans.some(plan => plan.id === versionKey) ? versionKey : state.plans[0]?.id || defaultPlanId;
     renderPlanSelect(); itemsEl.innerHTML = ''; $('#tripName').value = data.name || state.plans.find(plan => plan.id === state.versionKey)?.name || '我的自驾行程';
     state.schedule = applySharedSchedule((data.schedule || []).map(event => {
@@ -160,12 +190,14 @@ export function createSession({
     state.routes = state.routes.filter(route => usedRouteIds.has(route.id));
     state.preferences = { ...state.preferences, ...(data.preferences || {}) };
     // 刷新后优先显示"当日"时间表：今天在行程日期内则默认筛选今天，否则显示全部
-    state.dayFilter = state.schedule.some(item => item.date === localToday()) ? localToday() : '';
+    const today = localToday(data.preferences?.timeZone || 'Asia/Shanghai');
+    state.dayFilter = state.schedule.some(item => item.date === today) ? today : '';
     state.schedule.forEach((entry, scheduleIndex) => {
       const oldItem = (data.items || [])[scheduleIndex] || {}; const place = state.locations.find(item => item.id === entry.locationId);
       addItem({ type: entry.type || typeForTitle(entry.title), date: entry.date, startTime: entry.start, endTime: entry.end || '', name: entry.title, address: place?.address || entry.address || '', note: entry.detail || '', photo: oldItem.photo || entry.photo || '', scheduleIndex });
     });
-    renderLocations(); save(); applyDayFilter();
+    if (typeof document === 'undefined' || document.documentElement.dataset.previewMode !== 'mobile') renderLocations();
+    save(); applyDayFilter();
   }
 
   function loadPreset(key, forceOriginal = false) {

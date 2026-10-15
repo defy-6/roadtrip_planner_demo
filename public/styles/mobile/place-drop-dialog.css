@@ -1,0 +1,24 @@
+/* Compact choices for associating a place with an existing or new schedule event. */
+html[data-preview-mode="mobile"] .place-drop-dialog .hint {
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  border-radius: 10px !important;
+  background: var(--ui-green-soft) !important;
+  color: #315b49 !important;
+  font-size: var(--ui-meta) !important;
+  line-height: 1.5 !important;
+}
+
+html[data-preview-mode="mobile"] #placeDropEditor label {
+  gap: 6px !important;
+}
+
+html[data-preview-mode="mobile"] #placeDropEditor select {
+  width: 100% !important;
+  min-height: var(--ui-control-height-touch) !important;
+}
+
+html[data-preview-mode="mobile"] #placeDropEditor .editor-actions button {
+  padding-inline: 8px !important;
+  white-space: nowrap !important;
+}

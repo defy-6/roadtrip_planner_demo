@@ -29,6 +29,26 @@ function httpsGetJson(url) {
   });
 }
 
+function httpsGetImage(url, redirects = 0) {
+  const parsed = new URL(String(url || ''));
+  const allowed = parsed.protocol === 'https:' && (parsed.hostname.endsWith('.autonavi.com') || parsed.hostname.endsWith('.amap.com'));
+  if (!allowed) return Promise.reject(new Error('只允许读取高德地图资源'));
+  return new Promise((resolve, reject) => {
+    const req = https.get(parsed, res => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects < 3) {
+        res.resume(); resolve(httpsGetImage(new URL(res.headers.location, parsed).href, redirects + 1)); return;
+      }
+      const type = String(res.headers['content-type'] || '').split(';')[0];
+      if (res.statusCode !== 200 || !type.startsWith('image/')) { res.resume(); reject(new Error(`地图图片读取失败（HTTP ${res.statusCode}）`)); return; }
+      const chunks = []; let size = 0;
+      res.on('data', chunk => { size += chunk.length; if (size > 2 * 1024 * 1024) req.destroy(new Error('地图图片超过 2MB')); else chunks.push(chunk); });
+      res.on('end', () => resolve({ type, buffer: Buffer.concat(chunks) }));
+    });
+    req.setTimeout(12000, () => req.destroy(new Error('地图图片读取超时')));
+    req.on('error', reject);
+  });
+}
+
 // 拼接完整地址：省市区县 + 地址 + 名称
 const poiFullAddress = poi => {
   const base = `${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''}${poi.address || ''}`.trim();
@@ -83,6 +103,25 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
     cache.set(cacheKey, data);
     if (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value);
     return withMeta ? { data, cached: false } : data;
+  }
+
+  const localMinute = value => {
+    const match = /T(\d{2}):(\d{2})/.exec(String(value || ''));
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  };
+  const daylight = (time, sunrise, sunset) => {
+    const clock = localMinute(`T${String(time || '12:00').slice(0, 5)}`), rise = localMinute(sunrise), set = localMinute(sunset);
+    return clock === null || rise === null || set === null ? null : clock >= rise && clock < set;
+  };
+  async function qweatherSun(latitude, longitude, date) {
+    const key = `sun:${Number(latitude).toFixed(2)},${Number(longitude).toFixed(2)}:${date}`;
+    if (cache.has(key)) return cache.get(key);
+    try {
+      const query = new URLSearchParams({ location: `${Number(longitude).toFixed(2)},${Number(latitude).toFixed(2)}`, date: date.replaceAll('-', ''), key: qweatherKey });
+      const data = await httpsGetJson(`https://devapi.qweather.com/v7/astronomy/sun?${query}`);
+      const result = data.code === '200' ? { sunrise: data.sunrise || null, sunset: data.sunset || null } : { sunrise: null, sunset: null };
+      cache.set(key, result); return result;
+    } catch { return { sunrise: null, sunset: null }; }
   }
 
   // GET /api/geocode?address=&keyword=&city=
@@ -172,6 +211,11 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
     };
   }
 
+  async function mapImage({ url } = {}) {
+    const image = await httpsGetImage(url);
+    return { statusCode: 200, data: { dataUrl: `data:${image.type};base64,${image.buffer.toString('base64')}` } };
+  }
+
   // POST /api/route { origin, destination, waypoints, strategy, mode, city, cityd }
   async function calculateRoute(params = {}) {
     const { origin, destination, waypoints = [], strategy = '32', mode = 'driving', city, cityd } = params;
@@ -237,10 +281,15 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
         const targetHour = `${date}T${time.slice(0, 2).padStart(2, '0')}`;
         const hourly = qweather.hourly && qweather.hourly.find(item => String(item.fxTime || '').startsWith(targetHour));
         if (qweather.code === '200' && hourly) {
+          const sun = await qweatherSun(latitude, longitude, date);
+          const isDay = daylight(time, sun.sunrise, sun.sunset);
           const result = {
-            source: 'QWeather', latitude, longitude, time: hourly.fxTime, conditionText: hourly.text,
+            source: 'QWeather', provider: 'qweather', latitude, longitude, time: hourly.fxTime,
+            conditionCode: String(hourly.icon || ''), conditionText: hourly.text, isNight: isDay === null ? null : !isDay,
+            sunrise: sun.sunrise, sunset: sun.sunset,
             temperature: Number(hourly.temp), apparentTemperature: Number(hourly.feelsLike), precipitationProbability: Number(hourly.pop), precipitation: Number(hourly.precip),
-            windSpeed: Number(hourly.windSpeed), windGusts: Number(hourly.windGust), queriedAt: new Date().toISOString(),
+            humidity: Number(hourly.humidity), pressure: Number(hourly.pressure), visibility: Number(hourly.vis), cloudCover: Number(hourly.cloud), dewPoint: Number(hourly.dew),
+            windDirection: hourly.windDir || '', windDirectionDegree: Number(hourly.wind360), windSpeed: Number(hourly.windSpeed), windGusts: Number(hourly.windGust), queriedAt: new Date().toISOString(),
           };
           cache.set(cacheKey, result);
           return { statusCode: 200, data: { ...result, cached: false } };
@@ -250,13 +299,15 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
     const query = new URLSearchParams({
       latitude: String(latitude), longitude: String(longitude), timezone: 'Asia/Shanghai', start_date: date, end_date: date,
       hourly: 'temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m',
+      daily: 'sunrise,sunset',
     });
     const data = await httpsGetJson(`https://api.open-meteo.com/v1/forecast?${query}`);
     const hour = `${date}T${time.slice(0, 2).padStart(2, '0')}:00`;
     const index = data.hourly && data.hourly.time ? data.hourly.time.indexOf(hour) : -1;
     if (index < 0) throw new Error('该日期暂未提供逐小时天气预报；请临近出发时再查询');
     const result = {
-      source: 'Open-Meteo', latitude: data.latitude, longitude: data.longitude, time: hour,
+      source: 'Open-Meteo', provider: 'open-meteo', latitude: data.latitude, longitude: data.longitude, time: hour,
+      conditionCode: String((data.hourly.weather_code && data.hourly.weather_code[index]) ?? ''),
       temperature: data.hourly.temperature_2m && data.hourly.temperature_2m[index],
       apparentTemperature: data.hourly.apparent_temperature && data.hourly.apparent_temperature[index],
       precipitationProbability: data.hourly.precipitation_probability && data.hourly.precipitation_probability[index],
@@ -266,6 +317,8 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
       windGusts: data.hourly.wind_gusts_10m && data.hourly.wind_gusts_10m[index],
       queriedAt: new Date().toISOString(),
     };
+    result.sunrise = data.daily?.sunrise?.[0] || null; result.sunset = data.daily?.sunset?.[0] || null;
+    const isDay = daylight(time, result.sunrise, result.sunset); result.isNight = isDay === null ? null : !isDay;
     cache.set(cacheKey, result);
     return { statusCode: 200, data: { ...result, cached: false } };
   }
@@ -277,7 +330,7 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
     return { statusCode: 200, data: { mode: isMobile ? 'mobile' : 'desktop' } };
   }
 
-  return { geocode, placePhotos, placeDetails, calculateRoute, weather, previewMode };
+  return { geocode, placePhotos, placeDetails, mapImage, calculateRoute, weather, previewMode };
 }
 
 module.exports = { createAmapRoutes };

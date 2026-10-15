@@ -1,0 +1,199 @@
+:root {
+  --mobile-device-width: 393px;
+  --mobile-device-height: 852px;
+  --mobile-canvas-max: 430px;
+  --mobile-safe-top: env(safe-area-inset-top, 0px);
+  --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-page-inline: 16px;
+  --mobile-control-height: 44px;
+  --mobile-control-primary: 52px;
+  --mobile-control-compact: 40px;
+  --mobile-card-radius: 14px;
+  --mobile-section-gap: 14px;
+  --mobile-bottom-bar-height: 72px;
+}
+
+html[data-preview-mode="mobile"] body {
+  --page-inline: var(--mobile-page-inline);
+  position: relative;
+  width: min(100%, var(--mobile-canvas-max)) !important;
+  max-width: var(--mobile-canvas-max) !important;
+  margin: 0 auto !important;
+  padding-bottom: var(--mobile-safe-bottom);
+  background: #fbfaf6;
+  box-shadow: 0 0 34px #173c3220;
+}
+
+html[data-preview-mode="mobile"] {
+  background: #e5ebe6;
+}
+
+html[data-preview-mode="mobile"] main {
+  display: block !important;
+  box-sizing: border-box;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+html[data-preview-mode="mobile"] .app-header .plan-actions,
+html[data-preview-mode="mobile"] .app-header .header-utilities {
+  display: none !important;
+}
+
+html[data-preview-mode="mobile"] .workspace-panel,
+html[data-preview-mode="mobile"] .content,
+html[data-preview-mode="mobile"] .locations-panel,
+html[data-preview-mode="mobile"] .mobile-plans-panel {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+html[data-preview-mode="mobile"] button,
+html[data-preview-mode="mobile"] select,
+html[data-preview-mode="mobile"] input {
+  box-sizing: border-box;
+}
+
+html[data-preview-mode="mobile"] .mobile-tabbar {
+  left: 50% !important;
+  right: auto !important;
+  width: min(calc(100vw - 28px), calc(var(--mobile-canvas-max) - 28px)) !important;
+  transform: translateX(-50%);
+  min-height: calc(var(--mobile-bottom-bar-height) + var(--mobile-safe-bottom));
+  padding-bottom: var(--mobile-safe-bottom);
+}
+
+html[data-preview-mode="mobile"] .mobile-tabbar .mobile-undo-action {
+  position: absolute !important;
+  right: 14px !important;
+}
+
+html[data-preview-mode="mobile"] #eventEditor {
+  width: min(calc(100vw - 12px), calc(var(--mobile-canvas-max) - 12px)) !important;
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+}
+
+/* dialog 会进入 top layer，不继承居中 body 的宽度；所有手机弹窗必须自行对齐手机画布。 */
+html[data-preview-mode="mobile"] dialog[open] {
+  box-sizing: border-box !important;
+  left: 50% !important;
+  right: auto !important;
+  width: min(calc(100vw - 12px), calc(var(--mobile-canvas-max) - 12px)) !important;
+  max-width: calc(var(--mobile-canvas-max) - 12px) !important;
+  margin-right: auto !important;
+  margin-left: auto !important;
+  transform: translateX(-50%) !important;
+}
+
+html[data-preview-mode="mobile"] dialog.event-editor[open],
+html[data-preview-mode="mobile"] dialog.expense-ledger[open] {
+  margin-top: auto !important;
+  margin-bottom: 0 !important;
+}
+
+html[data-preview-mode="mobile"] dialog.expense-ledger[open] {
+  height: min(100dvh, 900px) !important;
+  max-height: 100dvh !important;
+}
+
+html[data-preview-mode="mobile"] #eventEditor .editor-actions {
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  transform: none !important;
+}
+
+/* 手机模式按应用路由一次只显示一个页面；不再依赖 viewport 媒体查询。 */
+html[data-preview-mode="mobile"] body[data-mobile-view] .schedule-panel,
+html[data-preview-mode="mobile"] body[data-mobile-view] .content,
+html[data-preview-mode="mobile"] body[data-mobile-view] .locations-panel,
+html[data-preview-mode="mobile"] body[data-mobile-view] .hero,
+html[data-preview-mode="mobile"] body[data-mobile-view] .mobile-plans-panel {
+  display: none !important;
+}
+
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .schedule-panel,
+html[data-preview-mode="mobile"] body[data-mobile-view="map"] .content {
+  display: block !important;
+}
+
+html[data-preview-mode="mobile"] body[data-mobile-view="places"] .locations-panel {
+  display: flex !important;
+}
+
+html[data-preview-mode="mobile"] body[data-mobile-view="plans"] .mobile-plans-panel {
+  display: grid !important;
+}
+
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] #addScheduleBtn {
+  left: 50% !important;
+  right: auto !important;
+  width: min(calc(100vw - 32px), 398px) !important;
+  transform: translateX(-50%);
+}
+
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] #schedule,
+html[data-preview-mode="mobile"] body[data-mobile-view="map"] .map-panel,
+html[data-preview-mode="mobile"] body[data-mobile-view="places"] .locations-panel {
+  scroll-margin-top: var(--mobile-section-gap);
+}
+
+html[data-preview-mode="mobile"] .aside-head,
+html[data-preview-mode="mobile"] .mobile-schedule-toolbar,
+html[data-preview-mode="mobile"] .location-toolbar {
+  min-width: 0;
+}
+
+@media (max-width: 430px) {
+  :root { --mobile-page-inline: 14px; }
+  html[data-preview-mode="mobile"] body { box-shadow: none; }
+}
+
+/* 桌面手机预览默认模拟 iPhone 15 Pro；真实设备继续使用系统 safe-area。 */
+html[data-preview-device="iphone15-pro"] {
+  --mobile-canvas-max: var(--mobile-device-width);
+  --mobile-safe-top: 59px;
+  --mobile-safe-bottom: 34px;
+}
+
+/* 浏览器内 Web App：浏览器视口已经避让状态栏与灵动岛，不重复占位。 */
+html[data-preview-device="iphone15-pro-web"] {
+  --mobile-canvas-max: var(--mobile-device-width);
+  --mobile-safe-top: 0px;
+  --mobile-safe-bottom: 0px;
+}
+
+html[data-preview-device="iphone15-pro"] body::before {
+  content: '';
+  position: fixed;
+  top: 11px;
+  left: 50%;
+  z-index: 4000;
+  width: 126px;
+  height: 37px;
+  border-radius: 999px;
+  background: #000;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+html[data-preview-mode="mobile"] body[data-mobile-view] .app-header {
+  height: calc(76px + var(--mobile-safe-top)) !important;
+  min-height: calc(76px + var(--mobile-safe-top)) !important;
+  padding-top: calc(16px + var(--mobile-safe-top)) !important;
+}
+
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .schedule-panel,
+html[data-preview-mode="mobile"] body[data-mobile-view="map"] .content,
+html[data-preview-mode="mobile"] body[data-mobile-view="map"] .map-panel,
+html[data-preview-mode="mobile"] body[data-mobile-view="places"] .locations-panel {
+  height: calc(100dvh - 184px - var(--mobile-safe-top) - var(--mobile-safe-bottom)) !important;
+}
+
+html[data-preview-device="iphone15-pro"] body,
+html[data-preview-device="iphone15-pro-web"] body {
+  min-height: min(100dvh, var(--mobile-device-height));
+}

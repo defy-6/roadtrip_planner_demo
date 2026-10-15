@@ -75,13 +75,14 @@ function createRouter({ store, amapKey, qweatherKey }) {
 
     // 网页端复用：高德/天气查询（GET 取 query，路线取 body）与预览模式。
     // 公网域名暴露时高德类接口必须登录，防止未授权消耗配额。
-    if (['geocode', 'place-photos', 'place-details', 'route', 'weather'].includes(resource)) {
+    if (['geocode', 'place-photos', 'place-details', 'map-image', 'route', 'weather'].includes(resource)) {
       if (!user) return { statusCode: 401, data: { ok: false, error: '未登录' } };
     }
     try {
       if (resource === 'geocode') return await amap.geocode({ ...query, ...(body && typeof body === 'object' ? body : {}) });
       if (resource === 'place-photos') return await amap.placePhotos({ ...query, ...(body && typeof body === 'object' ? body : {}) });
       if (resource === 'place-details') return await amap.placeDetails({ ...query, ...(body && typeof body === 'object' ? body : {}) });
+      if (resource === 'map-image') return await amap.mapImage({ ...query, ...(body && typeof body === 'object' ? body : {}) });
       if (resource === 'route' && method === 'POST') return await amap.calculateRoute(body);
       if (resource === 'weather') return await amap.weather({ ...query, ...(body && typeof body === 'object' ? body : {}) });
       if (resource === 'preview-mode') return await amap.previewMode(headers);
@@ -116,7 +117,7 @@ function createRouter({ store, amapKey, qweatherKey }) {
       // 轻量计划接口：查看/切换/新建/复制/删除
       if (action === 'plan' && method === 'GET') return trips.getPlan(user._id, id);
       if (action === 'plan' && method === 'PUT') return trips.switchPlan(user._id, id, body);
-      if (action === 'plans' && sub === 'copy' && method === 'POST') return trips.copyPlan(user._id, id);
+      if (action === 'plans' && sub === 'copy' && method === 'POST') return trips.copyPlan(user._id, id, body);
       if (action === 'plans' && method === 'POST') return trips.createPlan(user._id, id, body);
       if (action === 'plans' && method === 'DELETE') return trips.removePlan(user._id, id, body);
       // 地点 / 账本轻量接口
@@ -139,9 +140,14 @@ function createRouter({ store, amapKey, qweatherKey }) {
       if (action === 'export' && method === 'POST') return trips.exportJson(user._id, id);
       if (action === 'share' && method === 'POST') return trips.share(user._id, id, body);
       if (action === 'members' && method === 'GET') return trips.members(user._id, id);
+      if (action === 'members' && method === 'PUT') return trips.updateMember(user._id, id, body);
+      if (action === 'members' && method === 'DELETE') return trips.removeMember(user._id, id, body);
+      if (action === 'backups' && sub === 'restore' && method === 'POST') return trips.restoreBackup(user._id, id, body);
+      if (action === 'backups' && method === 'GET') return trips.listBackups(user._id, id);
+      if (action === 'backups' && method === 'POST') return trips.createBackup(user._id, id);
       if (method === 'GET') return trips.get(user._id, id);
       if (method === 'PUT') return trips.update(user._id, id, body);
-      if (method === 'DELETE') return trips.remove(user._id, id);
+      if (method === 'DELETE') return trips.remove(user._id, id, body);
       return { statusCode: 405, data: { ok: false, error: '方法不允许' } };
     }
 

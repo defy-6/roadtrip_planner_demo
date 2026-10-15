@@ -1,4 +1,41 @@
 /* Desktop-only workspace corrections. Loaded only when preview mode is desktop. */
+html[data-preview-mode="desktop"] :where(button,a,select,input,textarea,summary,[tabindex]):focus-visible {
+  outline: 2px solid #075b43;
+  outline-offset: 3px;
+}
+html[data-preview-mode="desktop"] :where(button,select,input,textarea):disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+html[data-preview-mode="desktop"] :where(.error,[role="alert"],.is-error) {
+  border: 1px solid var(--ui-status-error-border);
+  border-radius: var(--ui-radius-feedback);
+  background: var(--ui-status-error-bg);
+  color: var(--ui-status-error-text);
+}
+html[data-preview-mode="desktop"] :where(.success,.is-success,[data-status="success"]) {
+  border: 1px solid var(--ui-status-success-border);
+  border-radius: var(--ui-radius-feedback);
+  background: var(--ui-status-success-bg);
+  color: var(--ui-status-success-text);
+}
+html[data-preview-mode="desktop"] :where(.is-loading,[aria-busy="true"]){opacity:.72;pointer-events:none}
+html[data-preview-mode="desktop"] :where(.is-offline,[data-connectivity="offline"]){border:1px solid #e3d1a5;background:#fff8e6;color:#795a18}
+@media (prefers-reduced-motion:reduce){
+  html[data-preview-mode="desktop"] *,
+  html[data-preview-mode="desktop"] *::before,
+  html[data-preview-mode="desktop"] *::after{
+    animation-duration:.01ms!important;
+    animation-iteration-count:1!important;
+    scroll-behavior:auto!important;
+    transition-duration:.01ms!important;
+  }
+}
+@media (forced-colors:active){
+  html[data-preview-mode="desktop"] :where(button,a,select,input,textarea){border:1px solid ButtonText!important}
+  html[data-preview-mode="desktop"] :where(.is-selected,.is-active,[aria-pressed="true"]){outline:2px solid Highlight!important;outline-offset:-2px!important}
+  html[data-preview-mode="desktop"] :where(.error,[role="alert"],.is-error){border:2px solid Mark!important}
+}
 html[data-preview-mode="desktop"] #map.leaflet-container {
   position: relative;
   overflow: hidden;
@@ -481,6 +518,13 @@ html[data-preview-mode="desktop"] .locations-panel .mobile-place-actions button 
   border-left: 1px solid #e1e7e2 !important;
 }
 
+html[data-preview-mode="desktop"] .locations-panel .place-card-summary.selection-mode .place-select {
+  width:18px!important;
+  height:18px!important;
+  margin:0!important;
+  accent-color:#176146;
+}
+
 html[data-preview-mode="desktop"] .locations-panel:not(.is-expanded) .place-card.place-card-summary > .place-card-summary-title {
   grid-column: 2 !important;
   grid-row: 1 !important;
@@ -508,6 +552,202 @@ html[data-preview-mode="desktop"] .locations-panel:not(.is-expanded) .place-card
 }
 
 html[data-preview-mode="desktop"] .mobile-tabbar { display: none !important; }
+
+/* Personal place library: reuse the compact place-card proportions in a
+   two-column desktop collection instead of allowing photos to fill the dialog. */
+html[data-preview-mode="desktop"] #universalPlaceDialog {
+  overflow: hidden;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog > .editor-form {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  width: 720px;
+  height: min(760px, calc(100dvh - 28px));
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .universal-library-note {
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: #eef6f0;
+  color: #315b49;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog #universalPlaceSearch {
+  width: 100%;
+  height: 40px;
+  box-sizing: border-box;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog #universalPlaceList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 158px;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  padding-right: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .universal-place-card {
+  display: grid !important;
+  grid-template-columns: 110px minmax(0, 1fr) !important;
+  grid-template-rows: 30px 84px 34px !important;
+  gap: 0 9px !important;
+  width: 100%;
+  height: 158px !important;
+  min-height: 158px !important;
+  padding: 9px 9px 0 !important;
+  overflow: hidden;
+  border: 1px solid #dce5de !important;
+  border-radius: 10px;
+  background: #fff !important;
+  box-shadow: 0 2px 9px #173c320a;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .place-card-summary-title {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  align-self: start;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .place-card-summary-title b {
+  font-size: 12px;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .place-photo-preview,
+html[data-preview-mode="desktop"] #universalPlaceDialog .universal-place-card.no-photo::before {
+  grid-column: 1 !important;
+  grid-row: 1 / 3 !important;
+  display: grid !important;
+  width: 110px !important;
+  height: 82px !important;
+  min-width: 110px !important;
+  min-height: 82px !important;
+  aspect-ratio: 4 / 3 !important;
+  place-items: center;
+  margin: 0 !important;
+  border-radius: 7px;
+  background: #edf1ed;
+  color: #718078;
+  font-size: 10px;
+  object-fit: cover !important;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .universal-place-card.no-photo::before {
+  content: "暂无图片";
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .mobile-place-meta {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+  display: grid !important;
+  align-content: start;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+  color: #586a60;
+  font-size: 9.5px;
+  line-height: 1.25;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .mobile-place-meta > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .mobile-place-actions {
+  grid-column: 1 / -1 !important;
+  grid-row: 3 !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 -9px;
+  border-top: 1px solid #e1e7e2;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .mobile-place-actions button {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  place-items: center;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  color: #176146 !important;
+  font-size: 10px !important;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .mobile-place-actions button + button {
+  border-left: 1px solid #e1e7e2 !important;
+}
+
+html[data-preview-mode="desktop"] #universalPlaceDialog .editor-actions {
+  margin-top: 0;
+}
+
+/* Event editor: desktop uses the same bounded editor shell as the other
+   complex flows. Explicit hidden states must win over grid declarations. */
+html[data-preview-mode="desktop"] #eventEditor {
+  overflow: hidden;
+}
+
+html[data-preview-mode="desktop"] #eventEditor > .editor-form {
+  height: min(760px, calc(100dvh - 28px));
+  max-height: calc(100dvh - 28px);
+  grid-auto-rows: max-content;
+  align-content: start;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+html[data-preview-mode="desktop"] #eventEditor [hidden] {
+  display: none !important;
+}
+
+html[data-preview-mode="desktop"] #eventEditor .editor-grid:not([hidden]) {
+  display: grid;
+}
+
+/* Route summary belongs to the compact hero bar. Keep it anchored to that
+   bar as a popover instead of expanding the entire desktop header. */
+html[data-preview-mode="desktop"] main:has(#routeSummaryDetail:not([hidden])) {
+  grid-template-rows: auto minmax(620px, calc(100vh - 140px)) auto !important;
+}
+
+html[data-preview-mode="desktop"] main:has(#routeSummaryDetail:not([hidden])) > .app-header {
+  height: 108px !important;
+  align-items: stretch !important;
+  padding: 0 !important;
+}
+
+html[data-preview-mode="desktop"] .app-header .hero:has(#routeSummaryDetail) {
+  position: relative !important;
+  overflow: visible !important;
+}
+
+html[data-preview-mode="desktop"] .app-header .hero #routeSummaryDetail {
+  top: calc(100% + 8px) !important;
+  right: 0 !important;
+  left: auto !important;
+  width: min(720px, calc(100vw - 28px));
+  max-height: min(240px, calc(100dvh - 150px)) !important;
+  margin: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
 
 @media (min-width: 1101px) {
   html[data-preview-mode="desktop"] main {

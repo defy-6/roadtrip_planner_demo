@@ -10,41 +10,82 @@ const storeModule = (() => {
   const fs = require('node:fs');
   const path = require('node:path');
   const crypto = require('node:crypto');
-  const COLLECTIONS = ['users', 'sessions', 'trips', 'trip_members'];
+  const COLLECTIONS = ['users', 'sessions', 'trips', 'trip_members', 'trip_backups'];
 // 数据访问层：本地 JSON 文件适配器（LOCAL=1 时用于开发测试）+ 微信云开发适配器。
 // 两个实现暴露同一套异步接口：
 //   findOne(collection, query) / find(collection, query)
 //   insert(collection, doc) / update(collection, query, patch) / remove(collection, query)
+//   updateIfMatches(collection, query, patch) → { updated, doc } 条件（乐观并发）更新
 // query 为等值匹配对象；文档统一使用 _id 字符串主键。
+//
+// updateIfMatches 是"版本前置条件 + 写入"的原子载体：
+//   - 本地 JSON 适配器：文件锁下重读、条件匹配，临时文件 fsync 后替换；
+//     不以实例的旧内存作为权威，不作为云数据库多实例安全的替代。
+//   - 云数据库适配器：where(...).update() 由数据库做单文档条件更新，
+//     只有仍匹配 query（含 updated_at）时才写入，stats.updated === 0 即判定为版本冲突。
 
 'use strict';
 
+// Database payloads are JSON; remain compatible with older cloud Node runtimes.
+const structuredClone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 
 
 // ---------- 本地 JSON 适配器 ----------
 class LocalStore {
   constructor(file) {
-    this.file = file;
+    this.file = path.resolve(file);
     this.data = {};
     for (const name of COLLECTIONS) this.data[name] = [];
-    this._load();
-    this._persist();
+    this._withLock(() => { if (!this._load()) this._persist(); });
   }
+
+  _withLock(action) {
+    fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    const lock = `${this.file}.lock`;
+    let descriptor;
+    try { descriptor = fs.openSync(lock, 'wx', 0o600); }
+    catch (error) {
+      if (error.code === 'EEXIST') { error.code = 'LOCAL_STORE_BUSY'; error.message = '本地存储正在被另一进程使用，请重试；不会覆盖已有数据'; }
+      throw error;
+    }
+    try { return action(); }
+    finally { fs.closeSync(descriptor); fs.unlinkSync(lock); }
+  }
+
+  _refresh() { if (!this._load()) throw new Error('本地数据文件缺失，已停止写入，请恢复备份'); }
 
   _load() {
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)
+        || ['users', 'sessions', 'trips', 'trip_members'].some(name => !Array.isArray(raw[name]))
+        || (raw.trip_backups !== undefined && !Array.isArray(raw.trip_backups))) {
+        throw new Error('本地账号数据格式错误，已停止写入');
+      }
       for (const name of COLLECTIONS) {
         if (Array.isArray(raw[name])) this.data[name] = raw[name];
       }
-    } catch {
-      // 首次启动尚无数据文件
+      this.data = { ...raw, ...this.data };
+      return true;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return false; // Only a genuinely absent database may be initialized.
     }
   }
 
-  _persist() {
+  _persist(next = this.data) {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2), 'utf8');
+    const temporary = `${this.file}.${crypto.randomBytes(8).toString('hex')}.tmp`;
+    try {
+      const descriptor = fs.openSync(temporary, 'wx', 0o600);
+      try { fs.writeFileSync(descriptor, JSON.stringify(next, null, 2), 'utf8'); fs.fsyncSync(descriptor); }
+      finally { fs.closeSync(descriptor); }
+      fs.renameSync(temporary, this.file);
+    } catch (error) {
+      try { fs.unlinkSync(temporary); } catch { /* only this attempt's temporary file */ }
+      throw error;
+    }
+    this.data = next;
   }
 
   _matches(doc, query) {
@@ -52,35 +93,68 @@ class LocalStore {
   }
 
   async findOne(collection, query) {
-    return this.data[collection].find(d => this._matches(d, query)) || null;
+    this._refresh();
+    return structuredClone(this.data[collection].find(d => this._matches(d, query)) || null);
   }
 
   async find(collection, query) {
-    return this.data[collection].filter(d => this._matches(d, query));
+    this._refresh();
+    return structuredClone(this.data[collection].filter(d => this._matches(d, query)));
   }
 
   async insert(collection, doc) {
+    return this._withLock(() => {
+    this._refresh();
     const record = { _id: crypto.randomBytes(16).toString('hex'), ...doc };
-    this.data[collection].push(record);
-    this._persist();
-    return record;
+    const next = structuredClone(this.data);
+    next[collection].push(structuredClone(record));
+    this._persist(next);
+    return structuredClone(record);
+    });
   }
 
   async update(collection, query, patch) {
-    const doc = this.data[collection].find(d => this._matches(d, query));
+    return this._withLock(() => {
+    this._refresh();
+    const next = structuredClone(this.data);
+    const doc = next[collection].find(d => this._matches(d, query));
     if (!doc) return null;
     Object.assign(doc, patch);
-    this._persist();
-    return doc;
+    this._persist(next);
+    return structuredClone(doc);
+    });
+  }
+
+  // 条件更新：仅当文档仍匹配 query 时写入，否则返回 updated: 0（版本前置条件失败）。
+  async updateIfMatches(collection, query, patch, related = []) {
+    return this._withLock(() => {
+    this._refresh();
+    const next = structuredClone(this.data);
+    const changes = [{ collection, query, patch }, ...related];
+    const docs = changes.map(change => next[change.collection].find(d => this._matches(d, change.query)));
+    if (docs.some(doc => !doc)) return { updated: 0, doc: null };
+    changes.forEach((change, index) => {
+      if (change.action === 'remove') next[change.collection] = next[change.collection].filter(doc => doc._id !== docs[index]._id);
+      else if (change.action !== 'check') Object.assign(docs[index], structuredClone(change.patch));
+    });
+    this._persist(next);
+    return { updated: 1, doc: structuredClone(docs[0]) };
+    });
   }
 
   async remove(collection, query) {
-    const before = this.data[collection].length;
-    this.data[collection] = this.data[collection].filter(d => !this._matches(d, query));
-    const removed = before - this.data[collection].length;
-    if (removed > 0) this._persist();
+    return this._withLock(() => {
+    this._refresh();
+    const next = structuredClone(this.data);
+    const before = next[collection].length;
+    next[collection] = next[collection].filter(d => !this._matches(d, query));
+    const removed = before - next[collection].length;
+    if (removed > 0) this._persist(next);
     return removed;
+    });
   }
+
+  async removeIfMatches(collection, query) { return this.remove(collection, query); }
 }
 
 // ---------- 微信云开发适配器 ----------
@@ -111,6 +185,51 @@ class CloudStore {
     if (!doc) return null;
     await this.db.collection(collection).doc(doc._id).update({ data: patch });
     return this.findOne(collection, query);
+  }
+
+  // 条件更新：由数据库原子执行，避免"先读后写"之间被其它实例/请求插入造成静默覆盖。
+  // 注意：这里不使用进程内锁，多实例部署下唯一可靠的是数据库的单文档条件更新。
+  async updateIfMatches(collection, query, patch, related = []) {
+    const replacement = value => Object.fromEntries(Object.entries(value).map(([key, item]) =>
+      [key, item && typeof item === 'object' ? this.db.command.set(item) : item]));
+    if (related.length || Object.values(query).some(value => value === undefined)) {
+      try {
+        const result = await this.db.runTransaction(async transaction => {
+          const changes = [{ collection, query, patch }, ...related];
+          const docs = [];
+          for (const change of changes) {
+            const result = await transaction.collection(change.collection).doc(change.query._id).get();
+            const doc = Array.isArray(result.data) ? result.data[0] : result.data;
+            if (!doc || !Object.entries(change.query).every(([key, value]) => doc[key] === value)) {
+              const conflict = new Error('版本前置条件不匹配'); conflict.code = 'ATOMIC_CONFLICT'; throw conflict;
+            }
+            docs.push(doc);
+          }
+          for (const change of changes) {
+            const target = transaction.collection(change.collection).doc(change.query._id);
+            if (change.action === 'remove') await target.remove();
+            else if (change.action !== 'check') await target.update({ data: replacement(change.patch) });
+          }
+          return { updated: 1, doc: { ...docs[0], ...structuredClone(patch) } };
+        });
+        return result.result || result;
+      } catch (error) {
+        if (error.code === 'ATOMIC_CONFLICT') return { updated: 0, doc: null };
+        throw error;
+      }
+    }
+    const before = await this.findOne(collection, query);
+    if (!before) return { updated: 0, doc: null };
+    const res = await this.db.collection(collection).where(query).update({ data: replacement(patch) });
+    const updated = Number((res && res.stats && res.stats.updated) || 0);
+    if (!updated) return { updated: 0, doc: null };
+    // Return this commit's version, never a subsequent writer's version from a reread.
+    return { updated, doc: { ...before, ...structuredClone(patch) } };
+  }
+
+  async removeIfMatches(collection, query) {
+    const result = await this.db.collection(collection).where(query).remove();
+    return Number(result.stats?.removed || 0);
   }
 
   async remove(collection, query) {
@@ -189,6 +308,238 @@ function sessionTtlMs() {
 
 
   return { hashPassword, verifyPassword, generateToken, sessionTtlMs };
+})();
+
+const tripWriteSafetyModule = (() => {
+'use strict';
+
+function nextRevision(previous) {
+  const prior = Date.parse(previous || '');
+  return new Date(Math.max(Date.now(), Number.isFinite(prior) ? prior + 1 : 0)).toISOString();
+}
+
+function versionConflict(trip) {
+  return { statusCode: 409, data: { ok: false, code: 'VERSION_CONFLICT',
+    error: '云端数据已更新，本次修改未写入，请保留本地修改并核对后重试',
+    current_updated_at: trip?.updated_at || '' } };
+}
+
+function guardVersion(trip, baseline) {
+  if (!supportedSchema(trip.data || {})) return { statusCode: 409, data: { ok: false,
+    code: 'SCHEMA_UNSUPPORTED', error: '当前客户端不支持该行程版本，已禁止降级写入' } };
+  if (typeof baseline !== 'string' || !baseline.trim()) {
+    return { statusCode: 428, data: { ok: false, code: 'VERSION_REQUIRED',
+      error: '缺少读取时的版本，请升级客户端并重新读取；本次修改未写入' } };
+  }
+  return baseline !== trip.updated_at ? versionConflict(trip) : null;
+}
+
+function libraryChange(user, locations) {
+  return { collection: 'users', query: { _id: user._id, place_library_revision: user.place_library_revision },
+    patch: { place_library: JSON.parse(JSON.stringify(locations)),
+      place_library_revision: Number(user.place_library_revision || 0) + 1 } };
+}
+
+function supportedSchema(data) {
+  const supported = value => value?.schemaVersion === undefined
+    || (Number.isInteger(Number(value.schemaVersion)) && Number(value.schemaVersion) >= 0 && Number(value.schemaVersion) <= 4);
+  return supported(data) && Object.values(data?.versions || {}).every(supported);
+}
+
+function hasPlannerData(data) {
+  const snapshot = value => value && (Array.isArray(value.schedule) || Array.isArray(value.items));
+  return Boolean(snapshot(data) || Object.values(data?.versions || {}).some(snapshot));
+}
+
+
+return { nextRevision, versionConflict, guardVersion, libraryChange, supportedSchema, hasPlannerData };
+})();
+// ===== backup-format.js（内联） =====
+const backupFormatModule = (() => {
+  const { supportedSchema } = tripWriteSafetyModule;
+  const crypto = require('node:crypto');
+// 旅行备份格式（纯规则）：不访问数据库、网络、DOM 或 wx，便于在 node --test 中直接验证。
+//
+// 备份范围（完整行程，而非"当前方案 JSON"）：
+//   - 行程文档 trip.data（全部方案 plans/versions、事件 schedule、费用 expenses、
+//     方案地点 locations 及其 photo/poiDetails、路线 routes、偏好 preferences、自定义类别 placeCategories）
+//   - 账号通用地点库 place_library（跨行程复用，且携带 photo/poiDetails 等大字段）
+//   - 资源清单 assets（明确区分"已内嵌图片"与"仅网络 URL"，不得把网络链接说成已完整保存图片）
+//
+// 完整性：integrity = sha256(stableStringify({ data, place_library }))，键排序后序列化，
+// 因此备份在不同存储/不同字段顺序下仍能校验一致。
+
+
+// 备份信封格式版本。恢复时若遇到更高版本一律拒绝，禁止降级重写。
+const BACKUP_FORMAT_VERSION = 1;
+
+function stableStringify(value) {
+  const seen = new WeakSet();
+  const walk = input => {
+    if (input === null || typeof input !== 'object') return input;
+    if (seen.has(input)) return null;
+    seen.add(input);
+    if (Array.isArray(input)) return input.map(walk);
+    return Object.keys(input).sort().reduce((acc, key) => { acc[key] = walk(input[key]); return acc; }, {});
+  };
+  return JSON.stringify(walk(value));
+}
+
+function computeIntegrity(payload) {
+  return crypto.createHash('sha256').update(stableStringify(payload)).digest('hex');
+}
+
+function clone(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+// 资源清单：递归统计 photo 字段，区分内嵌（data:）与网络链接（http(s):）。
+function summarizeAssets(...roots) {
+  const photos = { total: 0, embedded: 0, remote: 0, other: 0 };
+  const seen = new WeakSet();
+  const walk = node => {
+    if (!node || typeof node !== 'object') return;
+    if (seen.has(node)) return;
+    seen.add(node);
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    Object.entries(node).forEach(([key, value]) => {
+      if (key === 'photo' && typeof value === 'string' && value) {
+        photos.total += 1;
+        if (value.startsWith('data:')) photos.embedded += 1;
+        else if (/^https?:\/\//i.test(value)) photos.remote += 1;
+        else photos.other += 1;
+      } else if (value && typeof value === 'object') {
+        walk(value);
+      }
+    });
+  };
+  roots.forEach(walk);
+  const notes = [];
+  if (photos.remote > 0) notes.push(`${photos.remote} 张地点图片仅保存了网络链接，无法离线还原图片本体`);
+  if (photos.other > 0) notes.push(`${photos.other} 张图片引用来源未知`);
+  return { photos, notes, images_fully_embedded: photos.remote === 0 && photos.other === 0 };
+}
+
+function sourceVersionOf(data = {}, tripUpdatedAt = '') {
+  return {
+    updated_at: tripUpdatedAt || data.updatedAt || '',
+    schema_version: Number(data.schemaVersion || 0) || null,
+    event_category_version: Number(data.eventCategoryVersion || 0) || null,
+    place_model_version: Number(data.placeModelVersion || 0) || null,
+    route_link_mode_version: Number(data.routeLinkModeVersion || 0) || null,
+  };
+}
+
+// 生成备份信封。data 必须为行程文档数据；placeLibrary 为账号通用地点库。
+function buildBackupEnvelope({ data, placeLibrary = [], createdBy = '', createdAt, tripName = '', planName = '', sequence = 0, tripUpdatedAt = '' }) {
+  const payload = { data: clone(data) || {}, place_library: clone(placeLibrary) || [] };
+  return {
+    format_version: BACKUP_FORMAT_VERSION,
+    source: sourceVersionOf(payload.data, tripUpdatedAt),
+    created_at: createdAt || new Date().toISOString(),
+    created_by: createdBy,
+    sequence,
+    trip_name: tripName,
+    plan_name: planName,
+    data: payload.data,
+    place_library: payload.place_library,
+    assets: summarizeAssets(payload.data, payload.place_library),
+    integrity: computeIntegrity(payload),
+  };
+}
+
+// 校验信封本身：格式版本可识别、完整性匹配。
+function verifyBackupEnvelope(backup) {
+  if (!backup || typeof backup !== 'object') return { ok: false, reason: '备份记录缺失或格式不正确' };
+  const version = Number(backup.format_version || 0);
+  if (!version) return { ok: false, reason: '该备份缺少格式版本，无法安全校验（可能是旧版或损坏的记录）' };
+  if (version > BACKUP_FORMAT_VERSION) {
+    return { ok: false, reason: `备份格式版本 ${version} 高于当前支持的 ${BACKUP_FORMAT_VERSION}，禁止降级重写，请先升级应用` };
+  }
+  if (!backup.integrity) return { ok: false, reason: '该备份缺少完整性校验值，无法确认内容未被破坏' };
+  const expected = computeIntegrity({ data: backup.data || {}, place_library: backup.place_library || [] });
+  if (expected !== backup.integrity) return { ok: false, reason: '备份完整性校验失败，内容可能已损坏，已拒绝恢复' };
+  return { ok: true, format_version: version };
+}
+
+const PLACE_REF_KEYS = ['locationId', 'departurePlaceId', 'stopoverPlaceId', 'arrivalPlaceId', 'originPlaceId', 'destinationPlaceId'];
+const EVENT_REF_KEYS = ['locationId'];
+
+// 结构 + 关联校验。
+// 返回 { ok, errors, linkIssues, warnings }：
+//   - errors：结构性问题，任何情况下都禁止恢复（损坏/空方案集/格式错误）。
+//   - linkIssues：关联缺失（地点/路线引用悬空），默认禁止恢复，仅在用户显式确认后允许忽略。
+function validateBackupContent(data, placeLibrary = []) {
+  const errors = [];
+  const linkIssues = [];
+  const warnings = [];
+  if (!supportedSchema(data)) errors.push('当前客户端不支持备份中的行程 schema 版本，禁止降级恢复');
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { ok: false, errors: ['行程数据不是有效对象'], linkIssues, warnings };
+  }
+  const versions = data.versions;
+  if (!versions || typeof versions !== 'object' || Array.isArray(versions)) {
+    errors.push('备份缺少方案集合（versions），无法恢复');
+  } else if (Object.keys(versions).length === 0) {
+    errors.push('备份中的方案集合为空，恢复会清空行程');
+  }
+  if (data.plans !== undefined && !Array.isArray(data.plans)) errors.push('方案列表（plans）格式错误');
+  if (Array.isArray(data.plans)) {
+    const ids = new Set(Object.keys(versions || {}));
+    const missing = data.plans.map(plan => plan?.id).filter(id => id && !ids.has(id));
+    if (missing.length) errors.push(`方案列表引用了不存在的方案快照：${missing.slice(0, 3).join('、')}`);
+  }
+  if (data.activeVersion && versions && typeof versions === 'object' && !versions[data.activeVersion]) {
+    errors.push(`当前方案 ${data.activeVersion} 在备份中不存在`);
+  }
+
+  const libraryIds = new Set((Array.isArray(placeLibrary) ? placeLibrary : []).map(place => place?.id).filter(Boolean));
+
+  Object.entries(versions && typeof versions === 'object' ? versions : {}).forEach(([planKey, version]) => {
+    if (!version || typeof version !== 'object') { errors.push(`方案 ${planKey} 的快照格式错误`); return; }
+    if (version.schedule !== undefined && !Array.isArray(version.schedule)) errors.push(`方案 ${planKey} 的时间表格式错误`);
+    if (version.expenses !== undefined && !Array.isArray(version.expenses)) errors.push(`方案 ${planKey} 的费用数据格式错误`);
+    if (version.placeCategories !== undefined && !Array.isArray(version.placeCategories)) errors.push(`方案 ${planKey} 的地点类别格式错误`);
+    if (version.preferences !== undefined && (typeof version.preferences !== 'object' || Array.isArray(version.preferences))) errors.push(`方案 ${planKey} 的偏好设置格式错误`);
+    if (version.routes !== undefined && !Array.isArray(version.routes)) errors.push(`方案 ${planKey} 的路线数据格式错误`);
+    if (version.locations !== undefined && !Array.isArray(version.locations)) errors.push(`方案 ${planKey} 的地点数据格式错误`);
+
+    const planLocationIds = new Set((Array.isArray(version.locations) ? version.locations : []).map(place => place?.id).filter(Boolean));
+    const known = new Set([...planLocationIds, ...libraryIds]);
+    const routeIds = new Set([...(Array.isArray(version.routes) ? version.routes : []), ...(Array.isArray(data.routes) ? data.routes : [])].map(route => route?.id).filter(Boolean));
+
+    const missingLocations = new Set();
+    const missingRoutes = new Set();
+    (Array.isArray(version.schedule) ? version.schedule : []).forEach(event => {
+      if (!event || typeof event !== 'object') return;
+      const collect = target => {
+        if (!target || typeof target !== 'object') return;
+        [
+          ...EVENT_REF_KEYS.map(key => target[key]),
+          ...PLACE_REF_KEYS.map(key => target.flightInfo?.[key]),
+          ...PLACE_REF_KEYS.map(key => target.routeLinks?.[key]),
+          ...PLACE_REF_KEYS.map(key => target.routeInfo?.[key]),
+        ].forEach(id => { if (id && !known.has(id)) missingLocations.add(String(id)); });
+        (target.routeLinks?.viaPlaceIds || []).forEach(id => { if (id && !known.has(id)) missingLocations.add(String(id)); });
+        const routeId = target.routeLinks?.routeId;
+        if (routeId && !routeIds.has(routeId)) missingRoutes.add(String(routeId));
+      };
+      collect(event);
+    });
+    if (missingLocations.size) {
+      linkIssues.push(`方案 ${planKey} 有 ${missingLocations.size} 个关联地点在备份中缺失：${[...missingLocations].slice(0, 3).join('、')}`);
+    }
+    if (missingRoutes.size) {
+      linkIssues.push(`方案 ${planKey} 有 ${missingRoutes.size} 条关联路线在备份中缺失：${[...missingRoutes].slice(0, 3).join('、')}`);
+    }
+  });
+
+  if (!errors.length && !libraryIds.size) warnings.push('备份未包含账号通用地点库，恢复后我的地点库保持原样');
+  return { ok: errors.length === 0 && linkIssues.length === 0, errors, linkIssues, warnings };
+}
+
+
+  return { BACKUP_FORMAT_VERSION, stableStringify, computeIntegrity, summarizeAssets, sourceVersionOf, buildBackupEnvelope, verifyBackupEnvelope, validateBackupContent };
 })();
 
 // ===== routes/auth.js（内联） =====
@@ -311,6 +662,8 @@ function createAuthRoutes({ store, security, getOpenId }) {
 
 // ===== routes/trips.js（内联） =====
 const tripsModule = (() => {
+  const backupFormat = backupFormatModule;
+  const { nextRevision, versionConflict, guardVersion, libraryChange, supportedSchema, hasPlannerData } = tripWriteSafetyModule;
 // 行程接口：trips CRUD / join（分享码协作）/ share（owner 开关分享）/ members。
 // 权限模型：owner 全权；editor 可读可改；未加入者 403。统一返回 { statusCode, data }。
 'use strict';
@@ -358,9 +711,85 @@ function tripSummary(trip, role) {
 }
 
 function createTripsRoutes({ store }) {
+  const canonicalEventCategory = type => ({ service: 'supply', fuel: 'supply', flight: 'transport' }[type] || type || 'spot');
+
+  function normalizeEventCategories(data) {
+    if (!data || typeof data !== 'object') return { data, changed: false };
+    const next = JSON.parse(JSON.stringify(data));
+    let changed = next.eventCategoryVersion !== 1;
+    const normalizeList = list => {
+      if (!Array.isArray(list)) return;
+      list.forEach(event => {
+        if (!event || typeof event !== 'object') return;
+        const category = canonicalEventCategory(event.type);
+        if (event.category !== category) { event.category = category; changed = true; }
+      });
+    };
+    normalizeList(next.schedule);
+    normalizeList(next.items);
+    Object.values(next.versions || {}).forEach(version => {
+      normalizeList(version?.schedule);
+      normalizeList(version?.items);
+    });
+    next.eventCategoryVersion = 1;
+    return { data: next, changed };
+  }
+
+  async function migrateTripEventCategories(trip) {
+    if (!supportedSchema(trip?.data || {})) return trip;
+    const normalized = normalizeEventCategories(trip?.data || {});
+    if (!trip || !normalized.changed) return trip;
+    // 目录迁移是尽力而为的内部修复：条件更新失败（并发写入抢先）不报错，下次读取再迁移。
+    const migration = await store.updateIfMatches('trips', { _id: trip._id, updated_at: trip.updated_at }, { data: normalized.data, updated_at: nextRevision(trip.updated_at) });
+    return migration.doc || { ...trip, data: normalized.data };
+  }
+
+  async function accountPlaceLibrary(userId, legacyLocations = [], attempt = 0) {
+    const user = await store.findOne('users', { _id: userId });
+    if (!user) return [];
+    // 账号本人每次打开旧行程时增量承接该行程遗留的顶层地点，支持多个旧行程逐步迁移；
+    // 协作者传入空数组，因此不会继承行程所有者的私有库。
+    const library = JSON.parse(JSON.stringify(Array.isArray(user.place_library) ? user.place_library : []));
+    const ids = new Set(library.map(place => place?.id).filter(Boolean));
+    let changed = !Array.isArray(user.place_library);
+    (legacyLocations || []).forEach(place => {
+      if (!place?.id || ids.has(place.id)) return;
+      library.push(JSON.parse(JSON.stringify(place))); ids.add(place.id); changed = true;
+    });
+    let revision = Number(user.place_library_revision || 0);
+    if (changed) {
+      const change = libraryChange(user, library);
+      const saved = await store.updateIfMatches('users', change.query, change.patch);
+      if (!saved.updated) {
+        if (attempt < 3) return accountPlaceLibrary(userId, legacyLocations, attempt + 1);
+        throw new Error('地点库正在更新，请重试读取');
+      }
+      revision = change.patch.place_library_revision;
+    }
+    Object.defineProperty(library, 'revision', { value: revision });
+    return library;
+  }
+
   async function findMember(tripId, userId) {
     return store.findOne('trip_members', { trip_id: tripId, user_id: userId });
   }
+
+  // ---------- 版本前置条件与冲突契约（网页 / 小程序 / 后端一致） ----------
+  // 业务码 VERSION_CONFLICT + HTTP 409；所有写入入口都必须带可核对的版本前置条件。
+  // 关键字：
+  //   - 不能只靠客户端"先 GET 再 PUT"：服务端把"版本检查 + 写入"合并为一次条件更新（原子）。
+  //   - 客户端带 baseUpdatedAt 时，与当前版本不一致即冲突（检测"基于旧版本覆盖"）。
+  //   - 旧客户端不带读取基线必须拒绝（428），不能用服务端当前版本替旧草稿背书。
+  async function commitTrip(tripId, expectedUpdatedAt, patch, related = []) {
+    return store.updateIfMatches(
+      'trips',
+      { _id: tripId, updated_at: expectedUpdatedAt },
+      { ...patch, updated_at: nextRevision(expectedUpdatedAt) },
+      related,
+    );
+  }
+
+  // 统一的版本前置条件入口：先快速失败，再用条件更新保证原子。
 
   async function list(userId) {
     const members = await store.find('trip_members', { user_id: userId });
@@ -370,7 +799,7 @@ function createTripsRoutes({ store }) {
       const trip = await store.findOne('trips', { _id: m.trip_id });
       if (!trip) continue;
       if (m.role === 'owner') mine.push(tripSummary(trip, 'owner'));
-      else shared.push(tripSummary(trip, 'editor'));
+      else shared.push(tripSummary(trip, m.role));
     }
     const byUpdated = (a, b) => String(b.updated_at).localeCompare(String(a.updated_at));
     mine.sort(byUpdated);
@@ -385,7 +814,7 @@ function createTripsRoutes({ store }) {
     const trip = await store.insert('trips', {
       name,
       owner_id: userId,
-      data: data && typeof data === 'object' ? data : {},
+      data: normalizeEventCategories(data && typeof data === 'object' ? data : {}).data,
       share_code: null,
       share_enabled: false,
       created_at: now,
@@ -412,29 +841,47 @@ function createTripsRoutes({ store }) {
   }
 
   async function get(userId, tripId) {
-    const trip = await store.findOne('trips', { _id: tripId });
+    let trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权访问该行程' } };
+    trip = await migrateTripEventCategories(trip);
     const tripOut = publicTrip(trip, member.role);
-    tripOut.data = sanitizePhotos(tripOut.data || {});
+    // publicTrip 与底层 store 共享 data 引用；本地 JSON store 的 findOne 返回的是活对象，
+    // 直接改写会把"注入给客户端的通用地点库"回写进行程文档。这里先深拷贝再加工。
+    tripOut.data = JSON.parse(JSON.stringify(tripOut.data || {}));
+    tripOut.data = sanitizePhotos(tripOut.data);
+    tripOut.data.locations = await accountPlaceLibrary(userId, member.role === 'owner' ? tripOut.data.locations : []);
+    tripOut.place_library_revision = tripOut.data.locations.revision;
     return { statusCode: 200, data: { ok: true, trip: tripOut } };
   }
 
-  async function update(userId, tripId, { name, data, preserve_large_fields: preserveLargeFields }) {
+  async function update(userId, tripId, { name, data, preserve_large_fields: preserveLargeFields, baseUpdatedAt, baseLibraryRevision }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
     if (member && member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '只读分享，无法编辑' } };
-    
-    const patch = { updated_at: new Date().toISOString() };
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+
+    const patch = {};
+    const related = [];
     if (name !== undefined) {
       if (!String(name).trim()) return { statusCode: 400, data: { ok: false, error: '行程名称不能为空' } };
       patch.name = String(name).trim();
     }
     if (data !== undefined) {
       if (!data || typeof data !== 'object') return { statusCode: 400, data: { ok: false, error: '行程数据格式错误' } };
+      if (!supportedSchema(data) || (hasPlannerData(trip.data) && !hasPlannerData(data))) return { statusCode: 400,
+        data: { ok: false, code: 'INVALID_PLANNER_DATA', error: '写入会丢失方案或使用不支持的数据版本，已拒绝' } };
+      const accountLocations = Array.isArray(data.locations) ? data.locations : null;
+      if (accountLocations) {
+        const user = await store.findOne('users', { _id: userId });
+        if (!user || baseLibraryRevision !== Number(user.place_library_revision || 0)) return versionConflict(trip);
+        related.push(libraryChange(user, accountLocations));
+      }
+      delete data.locations;
       if (preserveLargeFields) {
         const previousData = trip.data || {};
         data.routes = previousData.routes || [];
@@ -447,21 +894,28 @@ function createTripsRoutes({ store }) {
           version.placeCategories = previous.placeCategories || [];
         });
       }
-      patch.data = data;
+      patch.data = normalizeEventCategories(data).data;
     }
-    const saved = await store.update('trips', { _id: tripId }, patch);
-    return { statusCode: 200, data: { ok: true, trip: publicTrip(saved, member.role) } };
+    const saved = await commitTrip(tripId, baseUpdatedAt, patch, related);
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, trip: publicTrip(saved.doc, member.role),
+      ...(related.length ? { place_library_revision: related[0].patch.place_library_revision } : {}) } };
   }
 
-  async function remove(userId, tripId) {
+  async function remove(userId, tripId, { baseUpdatedAt, base_updated_at: baseUpdatedAtSnake } = {}) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
     const member = await findMember(tripId, userId);
     if (!member || member.role !== 'owner') {
       return { statusCode: 403, data: { ok: false, error: '仅创建者可删除行程' } };
     }
-    await store.remove('trips', { _id: tripId });
+    // 删除同样受版本前置条件约束：基于旧版本的删除不得静默执行。
+    const conflict = guardVersion(trip, baseUpdatedAt || baseUpdatedAtSnake);
+    if (conflict) return conflict;
+    const removed = await store.removeIfMatches('trips', { _id: tripId, updated_at: baseUpdatedAt || baseUpdatedAtSnake });
+    if (!removed) return versionConflict(await store.findOne('trips', { _id: tripId }) || trip);
     await store.remove('trip_members', { trip_id: tripId });
+    await store.remove('trip_backups', { trip_id: tripId });
     return { statusCode: 200, data: { ok: true } };
   }
 
@@ -482,13 +936,15 @@ function createTripsRoutes({ store }) {
     return { statusCode: 200, data: { ok: true, trip: publicTrip(trip, member.role) } };
   }
 
-  async function share(userId, tripId, { enabled, readonly }) {
+  async function share(userId, tripId, { enabled, readonly, baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
     const member = await findMember(tripId, userId);
     if (!member || member.role !== 'owner') {
       return { statusCode: 403, data: { ok: false, error: '仅创建者可管理分享' } };
     }
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
     const wantEnabled = !!enabled;
     let shareCode = trip.share_code;
     if (wantEnabled) {
@@ -501,8 +957,10 @@ function createTripsRoutes({ store }) {
     } else {
       shareCode = null;
     }
-    const saved = await store.update('trips', { _id: tripId }, { share_code: shareCode, share_enabled: wantEnabled, share_readonly: wantEnabled ? !!readonly : false });
-    return { statusCode: 200, data: { ok: true, trip: publicTrip(saved, member.role) } };
+    // 新分享码默认只读；拥有者可在协作者加入后单独授予编辑权限。
+    const saved = await commitTrip(tripId, baseUpdatedAt || trip.updated_at, { share_code: shareCode, share_enabled: wantEnabled, share_readonly: wantEnabled ? readonly !== false : false });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, trip: publicTrip(saved.doc, member.role), updated_at: saved.doc.updated_at } };
   }
 
   async function members(userId, tripId) {
@@ -516,7 +974,8 @@ function createTripsRoutes({ store }) {
       const u = await store.findOne('users', { _id: row.user_id });
       list.push({
         user_id: row.user_id,
-        nickname: u ? u.nickname : '未知用户',
+        nickname: u ? (u.nickname || u.username) : '未知用户',
+        username: u ? u.username : '',
         role: row.role,
         joined_at: row.joined_at,
       });
@@ -524,12 +983,173 @@ function createTripsRoutes({ store }) {
     return { statusCode: 200, data: { ok: true, members: list } };
   }
 
-  // 轻量时间表：只返回 activeVersion 与其 schedule（避免小程序端回传大体积 data）
-  async function getSchedule(userId, tripId) {
+  async function updateMember(userId, tripId, { user_id: targetUserId, role, baseUpdatedAt }) {
+    const trip = await store.findOne('trips', { _id: tripId });
+    if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    const owner = await findMember(tripId, userId);
+    if (!owner || owner.role !== 'owner') return { statusCode: 403, data: { ok: false, error: '仅创建者可管理协作者权限' } };
+    if (!['editor', 'viewer'].includes(role)) return { statusCode: 400, data: { ok: false, error: '权限只能设置为可编辑或只读' } };
+    const target = await findMember(tripId, String(targetUserId || ''));
+    if (!target) return { statusCode: 404, data: { ok: false, error: '协作者不存在' } };
+    if (target.role === 'owner') return { statusCode: 400, data: { ok: false, error: '不能修改创建者权限' } };
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+    const saved = await commitTrip(tripId, baseUpdatedAt, {}, [{ collection: 'trip_members',
+      query: { _id: target._id, role: target.role }, patch: { role } }]);
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, member: { user_id: target.user_id, role }, updated_at: saved.doc.updated_at } };
+  }
+
+  async function removeMember(userId, tripId, { user_id: targetUserId, baseUpdatedAt }) {
+    const trip = await store.findOne('trips', { _id: tripId });
+    if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    const owner = await findMember(tripId, userId);
+    if (!owner || owner.role !== 'owner') return { statusCode: 403, data: { ok: false, error: '仅创建者可移除协作者' } };
+    const target = await findMember(tripId, String(targetUserId || ''));
+    if (!target) return { statusCode: 404, data: { ok: false, error: '协作者不存在' } };
+    if (target.role === 'owner') return { statusCode: 400, data: { ok: false, error: '不能移除创建者' } };
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+    const saved = await commitTrip(tripId, baseUpdatedAt, {}, [{ collection: 'trip_members',
+      query: { _id: target._id, role: target.role }, action: 'remove' }]);
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, updated_at: saved.doc.updated_at } };
+  }
+
+  // ---------- 旅行备份（完整行程，而非"当前方案 JSON"） ----------
+  // 备份只写入 trip_backups 集合（仅行程成员可读），不写入任何公开目录/静态资源。
+  // 完整范围 = trip.data（全部方案/事件/费用/方案地点/路线/偏好/类别）+ 账号通用地点库 + 资源清单。
+  async function nextBackupSequence(tripId) {
+    const rows = await store.find('trip_backups', { trip_id: tripId });
+    return Math.max(0, ...rows.map(row => Number(row.sequence || 0))) + 1;
+  }
+
+  async function insertBackupEnvelope({ tripId, userId, trip, library, now }) {
+    const data = JSON.parse(JSON.stringify(trip.data || {}));
+    const active = data.activeVersion && data.versions?.[data.activeVersion];
+    const envelope = backupFormat.buildBackupEnvelope({
+      data,
+      placeLibrary: Array.isArray(library) ? library : [],
+      createdBy: userId,
+      createdAt: now,
+      tripName: trip.name || '',
+      planName: active?.name || '',
+      sequence: await nextBackupSequence(tripId),
+      tripUpdatedAt: trip.updated_at || '',
+    });
+    return store.insert('trip_backups', { trip_id: tripId, ...envelope });
+  }
+
+  async function pruneBackups(tripId, keep = 3) {
+    const rows = await store.find('trip_backups', { trip_id: tripId });
+    const newest = rows.sort((a, b) => Number(b.sequence || 0) - Number(a.sequence || 0) || String(b.created_at).localeCompare(String(a.created_at)));
+    for (const stale of newest.slice(keep)) await store.remove('trip_backups', { _id: stale._id });
+    return newest.slice(0, keep);
+  }
+
+  async function listBackups(userId, tripId) {
+    const member = await findMember(tripId, userId);
+    if (!member) return { statusCode: 403, data: { ok: false, error: '无权访问该行程' } };
+    const rows = await store.find('trip_backups', { trip_id: tripId });
+    const backups = rows.sort((a, b) => Number(b.sequence || 0) - Number(a.sequence || 0) || String(b.created_at).localeCompare(String(a.created_at))).slice(0, 3).map(row => ({
+      _id: row._id,
+      created_at: row.created_at,
+      created_by: row.created_by,
+      plan_name: row.plan_name || '',
+      trip_name: row.trip_name || '',
+      format_version: Number(row.format_version || 0),
+      source_updated_at: (row.source && row.source.updated_at) || '',
+      assets: row.assets || null,
+    }));
+    return { statusCode: 200, data: { ok: true, backups } };
+  }
+
+  async function createBackup(userId, tripId) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
     const member = await findMember(tripId, userId);
+    if (!member || member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '无权备份该行程' } };
+    const now = new Date().toISOString();
+    // 账号通用地点库只随"本人"归档：协作者不应把行程遗留地点并入自己的库。
+    const library = member.role === 'owner' ? await accountPlaceLibrary(userId, trip.data?.locations) : [];
+    const backup = await insertBackupEnvelope({ tripId, userId, trip, library, now });
+    await pruneBackups(tripId, 3);
+    const warnings = [];
+    if (member.role !== 'owner') warnings.push('由协作者创建的备份不包含行程创建者的通用地点库');
+    return {
+      statusCode: 200,
+      data: {
+        ok: true,
+        backup: {
+          _id: backup._id,
+          created_at: backup.created_at,
+          plan_name: backup.plan_name,
+          format_version: backup.format_version,
+          source: backup.source,
+          assets: backup.assets,
+        },
+        warnings,
+      },
+    };
+  }
+
+  async function restoreBackup(userId, tripId, { backup_id: backupId, allow_missing_links: allowMissingLinks, baseUpdatedAt } = {}) {
+    const owner = await findMember(tripId, userId);
+    if (!owner || owner.role !== 'owner') return { statusCode: 403, data: { ok: false, error: '仅创建者可恢复备份' } };
+    const trip = await store.findOne('trips', { _id: tripId });
+    if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+    const backup = await store.findOne('trip_backups', { _id: String(backupId || ''), trip_id: tripId });
+    if (!backup) return { statusCode: 404, data: { ok: false, error: '备份不存在' } };
+
+    // 1) 信封校验：格式版本可识别 + 完整性匹配；未知更高版本禁止降级重写。
+    const envelope = backupFormat.verifyBackupEnvelope(backup);
+    if (!envelope.ok) return { statusCode: 409, data: { ok: false, code: 'BACKUP_UNVERIFIED', error: envelope.reason } };
+
+    // 2) 结构与关联校验：损坏备份一律拒绝；关联缺失需用户显式确认后才可忽略。
+    const content = backupFormat.validateBackupContent(backup.data || {}, backup.place_library || []);
+    if (content.errors.length) {
+      return { statusCode: 409, data: { ok: false, code: 'BACKUP_INVALID', error: `备份校验未通过：${content.errors.slice(0, 2).join('；')}`, errors: content.errors } };
+    }
+    if (content.linkIssues.length && !allowMissingLinks) {
+      return { statusCode: 409, data: { ok: false, code: 'BACKUP_LINK_MISSING', error: `备份中存在关联缺失：${content.linkIssues.slice(0, 2).join('；')}。请确认后再恢复。`, link_issues: content.linkIssues } };
+    }
+
+    // 3) 恢复前保护当前数据：先落一份"恢复前快照"，任何失败都不会破坏原数据且可回退。
+    const now = new Date().toISOString();
+    const currentLibrary = await accountPlaceLibrary(userId, trip.data?.locations);
+    const guard = await insertBackupEnvelope({ tripId, userId, trip, library: currentLibrary, now });
+
+    // 4) 应用备份：store.update 仅在找到记录时写入；失败时原数据保持不变。
+    const patch = { data: JSON.parse(JSON.stringify(backup.data || {})) };
+    if (backup.trip_name) patch.name = backup.trip_name;
+    let saved;
+    try {
+      const user = await store.findOne('users', { _id: userId });
+      const related = Array.isArray(backup.place_library) && user && backup.created_by === userId ? [libraryChange(user, backup.place_library)] : [];
+      const committed = await commitTrip(tripId, baseUpdatedAt, patch, related);
+      if (!committed.updated) return versionConflict(await store.findOne('trips', { _id: tripId }) || trip);
+      saved = committed.doc;
+    } catch (error) {
+      return { statusCode: 500, data: { ok: false, code: 'RESTORE_FAILED', error: `恢复失败，原行程数据保持不变：${error.message}`, guard_backup_id: guard._id } };
+    }
+
+    // 5) 通用地点库单独恢复；失败只降级为警告，并如实反馈（部分成功不谎报全成功）。
+    const warnings = [...(content.warnings || [])];
+    if (backup.created_by !== userId) warnings.push('该备份由其他协作者创建，仅恢复共享行程，不替换本人的私人地点库');
+    if (content.linkIssues.length) warnings.push(...content.linkIssues.map(issue => `已按确认忽略：${issue}`));
+    await pruneBackups(tripId, 3);
+    return { statusCode: 200, data: { ok: true, trip: publicTrip(saved, owner.role), guard_backup_id: guard._id, warnings } };
+  }
+
+  // 轻量时间表：只返回 activeVersion 与其 schedule（避免小程序端回传大体积 data）
+  async function getSchedule(userId, tripId) {
+    let trip = await store.findOne('trips', { _id: tripId });
+    if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权访问该行程' } };
+    trip = await migrateTripEventCategories(trip);
     const data = trip.data || {};
     const versions = data.versions || {};
     const activeVersion = data.activeVersion || Object.keys(versions)[0] || null;
@@ -551,24 +1171,31 @@ function createTripsRoutes({ store }) {
     };
   }
 
-  async function updateSchedule(userId, tripId, { schedule }) {
+  async function updateSchedule(userId, tripId, { schedule, baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    // 读取后立即固化版本字符串：LocalStore 的 findOne 返回活对象，任何 await 后的再次读取
+    // 都可能已被并发写入改写，导致"基于旧版本写入"被误判为可写。
+    const expectedUpdatedAt = String(baseUpdatedAt || trip.updated_at || '');
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
     if (member && member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '只读分享，无法编辑' } };
-    
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+
     if (!Array.isArray(schedule)) return { statusCode: 400, data: { ok: false, error: '时间表数据格式错误' } };
-    const data = trip.data || {};
+    const data = JSON.parse(JSON.stringify(trip.data || {}));
     const versions = data.versions || {};
     const activeVersion = data.activeVersion || Object.keys(versions)[0];
     if (!activeVersion || !versions[activeVersion]) {
       return { statusCode: 400, data: { ok: false, error: '行程数据异常（无活动计划）' } };
     }
-    versions[activeVersion].schedule = schedule;
+    versions[activeVersion].schedule = schedule.map(event => ({ ...event, category: canonicalEventCategory(event?.type) }));
+    data.eventCategoryVersion = 1;
     versions[activeVersion].updatedAt = new Date().toISOString();
-    const saved = await store.update('trips', { _id: tripId }, { data, updated_at: new Date().toISOString() });
-    return { statusCode: 200, data: { ok: true, updated_at: saved.updated_at, count: schedule.length } };
+    const saved = await commitTrip(tripId, expectedUpdatedAt, { data });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, updated_at: saved.doc.updated_at, count: schedule.length } };
   }
 
   // 轻量 plan 数据：locations 去照片/详情大字段，route polyline 降采样（防 callFunction 超限）
@@ -629,28 +1256,33 @@ function createTripsRoutes({ store }) {
     };
   }
 
-  async function switchPlan(userId, tripId, { activeVersion }) {
+  async function switchPlan(userId, tripId, { activeVersion, baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
     if (member && member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '只读分享，无法编辑' } };
-    
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+
     const data = trip.data || {};
     if (!activeVersion || !(data.versions || {})[activeVersion]) {
       return { statusCode: 400, data: { ok: false, error: '计划不存在' } };
     }
-    await store.update('trips', { _id: tripId }, { data: { ...data, activeVersion }, updated_at: new Date().toISOString() });
-    return { statusCode: 200, data: { ok: true, activeVersion } };
+    const saved = await commitTrip(tripId, baseUpdatedAt || trip.updated_at, { data: { ...data, activeVersion } });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, activeVersion, updated_at: saved.doc.updated_at } };
   }
 
-  async function createPlan(userId, tripId, { name }) {
+  async function createPlan(userId, tripId, { name, baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
     if (member && member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '只读分享，无法编辑' } };
-    
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+
     name = String(name || '').trim();
     if (!name) return { statusCode: 400, data: { ok: false, error: '计划名称不能为空' } };
     const data = trip.data || {};
@@ -664,17 +1296,20 @@ function createTripsRoutes({ store }) {
     };
     const plans = [...(data.plans || []), { id, name }];
     const newData = { ...data, activeVersion: id, plans, versions };
-    await store.update('trips', { _id: tripId }, { data: newData, updated_at: new Date().toISOString() });
-    return { statusCode: 200, data: { ok: true, activeVersion: id, plans: plans.map(p => ({ id: p.id, name: p.name })) } };
+    const saved = await commitTrip(tripId, baseUpdatedAt || trip.updated_at, { data: newData });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, activeVersion: id, plans: plans.map(p => ({ id: p.id, name: p.name })), updated_at: saved.doc.updated_at } };
   }
 
-  async function copyPlan(userId, tripId) {
+  async function copyPlan(userId, tripId, { baseUpdatedAt } = {}) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
     if (member && member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '只读分享，无法编辑' } };
-    
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+
     const data = trip.data || {};
     const versions = data.versions || {};
     const av = activeVersionOf(data);
@@ -684,17 +1319,20 @@ function createTripsRoutes({ store }) {
     versions[id] = { ...JSON.parse(JSON.stringify(base)), name: `${base.name} 副本`, planKey: id, updatedAt: new Date().toISOString() };
     const plans = [...(data.plans || []), { id, name: `${base.name} 副本` }];
     const newData = { ...data, activeVersion: id, plans, versions };
-    await store.update('trips', { _id: tripId }, { data: newData, updated_at: new Date().toISOString() });
-    return { statusCode: 200, data: { ok: true, activeVersion: id, plans: plans.map(p => ({ id: p.id, name: p.name })) } };
+    const saved = await commitTrip(tripId, baseUpdatedAt || trip.updated_at, { data: newData });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, activeVersion: id, plans: plans.map(p => ({ id: p.id, name: p.name })), updated_at: saved.doc.updated_at } };
   }
 
-  async function removePlan(userId, tripId, { id }) {
+  async function removePlan(userId, tripId, { id, baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
     if (member && member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '只读分享，无法编辑' } };
-    
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+
     const data = trip.data || {};
     const plans = (data.plans || []).filter(p => p.id !== id);
     if (plans.length === 0) return { statusCode: 400, data: { ok: false, error: '至少保留一个计划' } };
@@ -704,8 +1342,9 @@ function createTripsRoutes({ store }) {
       ...data, plans, versions,
       activeVersion: data.activeVersion === id ? plans[0].id : data.activeVersion,
     };
-    await store.update('trips', { _id: tripId }, { data: newData, updated_at: new Date().toISOString() });
-    return { statusCode: 200, data: { ok: true, activeVersion: newData.activeVersion, plans: plans.map(p => ({ id: p.id, name: p.name })) } };
+    const saved = await commitTrip(tripId, baseUpdatedAt || trip.updated_at, { data: newData });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, activeVersion: newData.activeVersion, plans: plans.map(p => ({ id: p.id, name: p.name })), updated_at: saved.doc.updated_at } };
   }
 
   // 轻量地点：仅返回编辑所需字段（photo/poiDetails 大字段不传输，更新时按 id 保留）
@@ -724,28 +1363,37 @@ function createTripsRoutes({ store }) {
     };
   }
 
-  async function updateLocations(userId, tripId, { locations }) {
+  async function updateLocations(userId, tripId, { locations, deleted = [], baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    const expectedUpdatedAt = String(baseUpdatedAt || trip.updated_at || '');
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
     if (member && member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '只读分享，无法编辑' } };
-    
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+
     if (!Array.isArray(locations)) return { statusCode: 400, data: { ok: false, error: '地点数据格式错误' } };
-    const data = trip.data || {};
+    const data = JSON.parse(JSON.stringify(trip.data || {}));
     const versions = data.versions || {};
     const av = activeVersionOf(data);
     if (!av || !versions[av]) return { statusCode: 400, data: { ok: false, error: '行程数据异常（无活动计划）' } };
-    // 保留原有 photo/poiDetails 等大字段
+    // 增量合并：发送来的地点按 id 覆盖/新增，未发送的保留；deleted 中的 id 被移除。
+    // 前端可只发“新增/变更”的地点，避免每次保存都全量重传所有地点图片。
     const previous = versions[av].locations || [];
-    const merged = locations.map(l => {
-      const old = previous.find(p => p.id === l.id) || {};
-      return { ...old, ...l, resolved: l.resolved || old.resolved || null };
+    const byId = new Map(previous.map(p => [p.id, p]));
+    const deleteSet = new Set(Array.isArray(deleted) ? deleted.filter(Boolean) : []);
+    locations.forEach(l => {
+      if (!l?.id || deleteSet.has(l.id)) return;
+      const old = byId.get(l.id) || {};
+      byId.set(l.id, { ...old, ...l, resolved: l.resolved || old.resolved || null });
     });
+    const merged = [...byId.values()].filter(p => !deleteSet.has(p.id));
     versions[av].locations = merged;
     versions[av].updatedAt = new Date().toISOString();
-    await store.update('trips', { _id: tripId }, { data, updated_at: new Date().toISOString() });
-    return { statusCode: 200, data: { ok: true, count: merged.length } };
+    const saved = await commitTrip(tripId, expectedUpdatedAt, { data });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, updated_at: saved.doc.updated_at, count: merged.length } };
   }
 
   // 轻量账本：独立账目（versions[av].expenses）
@@ -761,49 +1409,58 @@ function createTripsRoutes({ store }) {
     return { statusCode: 200, data: { ok: true, activeVersion: av, expenses } };
   }
 
-  async function updateExpenses(userId, tripId, { expenses }) {
+  async function updateExpenses(userId, tripId, { expenses, schedule, baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    const expectedUpdatedAt = String(baseUpdatedAt || trip.updated_at || '');
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
     if (member && member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '只读分享，无法编辑' } };
-    
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+
     if (!Array.isArray(expenses)) return { statusCode: 400, data: { ok: false, error: '账目数据格式错误' } };
-    const data = trip.data || {};
+    if (schedule !== undefined && !Array.isArray(schedule)) return { statusCode: 400, data: { ok: false, error: '关联事件数据格式错误' } };
+    const data = JSON.parse(JSON.stringify(trip.data || {}));
     const versions = data.versions || {};
     const av = activeVersionOf(data);
     if (!av || !versions[av]) return { statusCode: 400, data: { ok: false, error: '行程数据异常（无活动计划）' } };
     versions[av].expenses = expenses;
+    if (schedule !== undefined) versions[av].schedule = schedule;
     versions[av].updatedAt = new Date().toISOString();
-    await store.update('trips', { _id: tripId }, { data, updated_at: new Date().toISOString() });
-    return { statusCode: 200, data: { ok: true, count: expenses.length } };
+    const saved = await commitTrip(tripId, expectedUpdatedAt, { data });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, updated_at: saved.doc.updated_at, count: expenses.length } };
   }
 
-  // 通用地点库（文件容器顶层 locations，跨计划复用）
+  // 我的地点库（users.place_library，账号下跨行程复用且不向协作者公开）
   async function getUniversal(userId, tripId) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权访问该行程' } };
-    const data = trip.data || {};
-    const universal = data.locations || [];
+    const universal = await accountPlaceLibrary(userId, member.role === 'owner' ? trip.data?.locations : []);
     return {
       statusCode: 200,
       data: { ok: true, locations: universal.map(l => ({ id: l.id, type: l.type, name: l.name, address: l.address || '' })) },
     };
   }
 
-  // 把通用库地点添加到当前计划（保留 photo/poiDetails 等大字段）
-  async function addUniversalToPlan(userId, tripId, { locationId }) {
+  // 把账号“我的地点库”地点添加到当前行程方案（保留 photo/poiDetails 等大字段）
+  async function addUniversalToPlan(userId, tripId, { locationId, baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    const expectedUpdatedAt = String(baseUpdatedAt || trip.updated_at || '');
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
     if (member && member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '只读分享，无法编辑' } };
-    
-    const data = trip.data || {};
-    const source = (data.locations || []).find(l => l.id === locationId);
-    if (!source) return { statusCode: 404, data: { ok: false, error: '通用库中不存在该地点' } };
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+
+    const data = JSON.parse(JSON.stringify(trip.data || {}));
+    const library = await accountPlaceLibrary(userId, member.role === 'owner' ? data.locations : []);
+    const source = library.find(l => l.id === locationId);
+    if (!source) return { statusCode: 404, data: { ok: false, error: '我的地点库中不存在该地点' } };
     const versions = data.versions || {};
     const av = activeVersionOf(data);
     if (!av || !versions[av]) return { statusCode: 400, data: { ok: false, error: '行程数据异常（无活动计划）' } };
@@ -812,9 +1469,11 @@ function createTripsRoutes({ store }) {
       planLocs.push({ ...JSON.parse(JSON.stringify(source)) });
       versions[av].locations = planLocs;
       versions[av].updatedAt = new Date().toISOString();
-      await store.update('trips', { _id: tripId }, { data, updated_at: new Date().toISOString() });
+      const saved = await commitTrip(tripId, expectedUpdatedAt, { data });
+      if (!saved.updated) return versionConflict(trip);
+      return { statusCode: 200, data: { ok: true, updated_at: saved.doc.updated_at } };
     }
-    return { statusCode: 200, data: { ok: true } };
+    return { statusCode: 200, data: { ok: true, updated_at: trip.updated_at } };
   }
 
   // 自定义地点类别（versions[av].placeCategories）
@@ -830,22 +1489,26 @@ function createTripsRoutes({ store }) {
     return { statusCode: 200, data: { ok: true, categories } };
   }
 
-  async function updateCategories(userId, tripId, { categories }) {
+  async function updateCategories(userId, tripId, { categories, baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    const expectedUpdatedAt = String(baseUpdatedAt || trip.updated_at || '');
     const member = await findMember(tripId, userId);
     if (!member) return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
     if (member && member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '只读分享，无法编辑' } };
-    
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
+
     if (!Array.isArray(categories)) return { statusCode: 400, data: { ok: false, error: '类别数据格式错误' } };
-    const data = trip.data || {};
+    const data = JSON.parse(JSON.stringify(trip.data || {}));
     const versions = data.versions || {};
     const av = activeVersionOf(data);
     if (!av || !versions[av]) return { statusCode: 400, data: { ok: false, error: '行程数据异常（无活动计划）' } };
     versions[av].placeCategories = categories;
     versions[av].updatedAt = new Date().toISOString();
-    await store.update('trips', { _id: tripId }, { data, updated_at: new Date().toISOString() });
-    return { statusCode: 200, data: { ok: true, count: categories.length } };
+    const saved = await commitTrip(tripId, expectedUpdatedAt, { data });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, updated_at: saved.doc.updated_at, count: categories.length } };
   }
 
   // 导出完整 JSON 到云存储（返回 fileID，小程序下载/分享；避免 callFunction 数据量限制）
@@ -881,32 +1544,39 @@ function createTripsRoutes({ store }) {
     return { statusCode: 200, data: { ok: true, routes } };
   }
 
-  async function updateRoutes(userId, tripId, { routes }) {
+  async function updateRoutes(userId, tripId, { routes, baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    const expectedUpdatedAt = String(baseUpdatedAt || trip.updated_at || '');
     const member = await findMember(tripId, userId);
     if (!member || member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: member && member.role === 'viewer' ? '只读分享，无法编辑' : '无权编辑该行程' } };
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
     if (!Array.isArray(routes)) return { statusCode: 400, data: { ok: false, error: '路线数据格式错误' } };
-    const data = trip.data || {};
+    const data = JSON.parse(JSON.stringify(trip.data || {}));
     const versions = data.versions || {};
     const av = activeVersionOf(data);
     if (!av || !versions[av]) return { statusCode: 400, data: { ok: false, error: '行程数据异常（无活动计划）' } };
     versions[av].routes = routes;
     versions[av].updatedAt = new Date().toISOString();
-    await store.update('trips', { _id: tripId }, { data, updated_at: new Date().toISOString() });
-    return { statusCode: 200, data: { ok: true, count: routes.length } };
+    const saved = await commitTrip(tripId, expectedUpdatedAt, { data });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, updated_at: saved.doc.updated_at, count: routes.length } };
   }
 
-  async function updateRoute(userId, tripId, { route }) {
+  async function updateRoute(userId, tripId, { route, baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    const expectedUpdatedAt = String(baseUpdatedAt || trip.updated_at || '');
     const member = await findMember(tripId, userId);
     if (!member || member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
     if (!route || typeof route !== 'object' || !String(route.id || '').trim()) {
       return { statusCode: 400, data: { ok: false, error: '路线数据格式错误' } };
     }
     const routeId = String(route.id);
-    const data = trip.data || {};
+    const data = JSON.parse(JSON.stringify(trip.data || {}));
     const av = activeVersionOf(data);
     if (!av || !data.versions?.[av]) return { statusCode: 400, data: { ok: false, error: '行程数据异常（无活动计划）' } };
     const upsert = list => {
@@ -918,28 +1588,33 @@ function createTripsRoutes({ store }) {
     };
     data.versions[av].routes = upsert(data.versions[av].routes);
     data.routes = upsert(data.routes);
-    await store.update('trips', { _id: tripId }, { data, updated_at: new Date().toISOString() });
-    return { statusCode: 200, data: { ok: true, route_id: routeId } };
+    const saved = await commitTrip(tripId, expectedUpdatedAt, { data });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, updated_at: saved.doc.updated_at, route_id: routeId } };
   }
 
-  async function syncRoutes(userId, tripId, { routeIds }) {
+  async function syncRoutes(userId, tripId, { routeIds, baseUpdatedAt }) {
     const trip = await store.findOne('trips', { _id: tripId });
     if (!trip) return { statusCode: 404, data: { ok: false, error: '行程不存在' } };
+    const expectedUpdatedAt = String(baseUpdatedAt || trip.updated_at || '');
     const member = await findMember(tripId, userId);
     if (!member || member.role === 'viewer') return { statusCode: 403, data: { ok: false, error: '无权编辑该行程' } };
+    const conflict = guardVersion(trip, baseUpdatedAt);
+    if (conflict) return conflict;
     if (!Array.isArray(routeIds)) return { statusCode: 400, data: { ok: false, error: '路线 ID 格式错误' } };
     const ids = new Set(routeIds.map(String));
-    const data = trip.data || {};
+    const data = JSON.parse(JSON.stringify(trip.data || {}));
     const av = activeVersionOf(data);
     if (!av || !data.versions?.[av]) return { statusCode: 400, data: { ok: false, error: '行程数据异常（无活动计划）' } };
     const retain = routes => (routes || []).filter(route => ids.has(String(route?.id)));
     data.versions[av].routes = retain(data.versions[av].routes);
     data.routes = retain(data.routes);
-    await store.update('trips', { _id: tripId }, { data, updated_at: new Date().toISOString() });
-    return { statusCode: 200, data: { ok: true, count: ids.size } };
+    const saved = await commitTrip(tripId, expectedUpdatedAt, { data });
+    if (!saved.updated) return versionConflict(trip);
+    return { statusCode: 200, data: { ok: true, updated_at: saved.doc.updated_at, count: ids.size } };
   }
 
-  return { list, create, get, update, remove, join, share, members, getSchedule, updateSchedule, getPlan, switchPlan, createPlan, copyPlan, removePlan, getLocations, updateLocations, getExpenses, updateExpenses, getUniversal, addUniversalToPlan, getCategories, updateCategories, exportJson, getRoutes, updateRoutes, updateRoute, syncRoutes };
+  return { list, create, get, update, remove, join, share, members, updateMember, removeMember, listBackups, createBackup, restoreBackup, getSchedule, updateSchedule, getPlan, switchPlan, createPlan, copyPlan, removePlan, getLocations, updateLocations, getExpenses, updateExpenses, getUniversal, addUniversalToPlan, getCategories, updateCategories, exportJson, getRoutes, updateRoutes, updateRoute, syncRoutes };
 }
 
 
@@ -976,6 +1651,26 @@ function httpsGetJson(url) {
     });
     req.setTimeout(15000, () => req.destroy(new Error('上游服务超时')));
     req.on('error', error => reject(new Error(`上游服务请求失败：${error.message}`)));
+  });
+}
+
+function httpsGetImage(url, redirects = 0) {
+  const parsed = new URL(String(url || ''));
+  const allowed = parsed.protocol === 'https:' && (parsed.hostname.endsWith('.autonavi.com') || parsed.hostname.endsWith('.amap.com'));
+  if (!allowed) return Promise.reject(new Error('只允许读取高德地图资源'));
+  return new Promise((resolve, reject) => {
+    const req = https.get(parsed, res => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects < 3) {
+        res.resume(); resolve(httpsGetImage(new URL(res.headers.location, parsed).href, redirects + 1)); return;
+      }
+      const type = String(res.headers['content-type'] || '').split(';')[0];
+      if (res.statusCode !== 200 || !type.startsWith('image/')) { res.resume(); reject(new Error(`地图图片读取失败（HTTP ${res.statusCode}）`)); return; }
+      const chunks = []; let size = 0;
+      res.on('data', chunk => { size += chunk.length; if (size > 2 * 1024 * 1024) req.destroy(new Error('地图图片超过 2MB')); else chunks.push(chunk); });
+      res.on('end', () => resolve({ type, buffer: Buffer.concat(chunks) }));
+    });
+    req.setTimeout(12000, () => req.destroy(new Error('地图图片读取超时')));
+    req.on('error', reject);
   });
 }
 
@@ -1033,6 +1728,25 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
     cache.set(cacheKey, data);
     if (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value);
     return withMeta ? { data, cached: false } : data;
+  }
+
+  const localMinute = value => {
+    const match = /T(\d{2}):(\d{2})/.exec(String(value || ''));
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  };
+  const daylight = (time, sunrise, sunset) => {
+    const clock = localMinute(`T${String(time || '12:00').slice(0, 5)}`), rise = localMinute(sunrise), set = localMinute(sunset);
+    return clock === null || rise === null || set === null ? null : clock >= rise && clock < set;
+  };
+  async function qweatherSun(latitude, longitude, date) {
+    const key = `sun:${Number(latitude).toFixed(2)},${Number(longitude).toFixed(2)}:${date}`;
+    if (cache.has(key)) return cache.get(key);
+    try {
+      const query = new URLSearchParams({ location: `${Number(longitude).toFixed(2)},${Number(latitude).toFixed(2)}`, date: date.replaceAll('-', ''), key: qweatherKey });
+      const data = await httpsGetJson(`https://devapi.qweather.com/v7/astronomy/sun?${query}`);
+      const result = data.code === '200' ? { sunrise: data.sunrise || null, sunset: data.sunset || null } : { sunrise: null, sunset: null };
+      cache.set(key, result); return result;
+    } catch { return { sunrise: null, sunset: null }; }
   }
 
   // GET /api/geocode?address=&keyword=&city=
@@ -1122,6 +1836,11 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
     };
   }
 
+  async function mapImage({ url } = {}) {
+    const image = await httpsGetImage(url);
+    return { statusCode: 200, data: { dataUrl: `data:${image.type};base64,${image.buffer.toString('base64')}` } };
+  }
+
   // POST /api/route { origin, destination, waypoints, strategy, mode, city, cityd }
   async function calculateRoute(params = {}) {
     const { origin, destination, waypoints = [], strategy = '32', mode = 'driving', city, cityd } = params;
@@ -1187,10 +1906,15 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
         const targetHour = `${date}T${time.slice(0, 2).padStart(2, '0')}`;
         const hourly = qweather.hourly && qweather.hourly.find(item => String(item.fxTime || '').startsWith(targetHour));
         if (qweather.code === '200' && hourly) {
+          const sun = await qweatherSun(latitude, longitude, date);
+          const isDay = daylight(time, sun.sunrise, sun.sunset);
           const result = {
-            source: 'QWeather', latitude, longitude, time: hourly.fxTime, conditionText: hourly.text,
+            source: 'QWeather', provider: 'qweather', latitude, longitude, time: hourly.fxTime,
+            conditionCode: String(hourly.icon || ''), conditionText: hourly.text, isNight: isDay === null ? null : !isDay,
+            sunrise: sun.sunrise, sunset: sun.sunset,
             temperature: Number(hourly.temp), apparentTemperature: Number(hourly.feelsLike), precipitationProbability: Number(hourly.pop), precipitation: Number(hourly.precip),
-            windSpeed: Number(hourly.windSpeed), windGusts: Number(hourly.windGust), queriedAt: new Date().toISOString(),
+            humidity: Number(hourly.humidity), pressure: Number(hourly.pressure), visibility: Number(hourly.vis), cloudCover: Number(hourly.cloud), dewPoint: Number(hourly.dew),
+            windDirection: hourly.windDir || '', windDirectionDegree: Number(hourly.wind360), windSpeed: Number(hourly.windSpeed), windGusts: Number(hourly.windGust), queriedAt: new Date().toISOString(),
           };
           cache.set(cacheKey, result);
           return { statusCode: 200, data: { ...result, cached: false } };
@@ -1200,13 +1924,15 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
     const query = new URLSearchParams({
       latitude: String(latitude), longitude: String(longitude), timezone: 'Asia/Shanghai', start_date: date, end_date: date,
       hourly: 'temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m',
+      daily: 'sunrise,sunset',
     });
     const data = await httpsGetJson(`https://api.open-meteo.com/v1/forecast?${query}`);
     const hour = `${date}T${time.slice(0, 2).padStart(2, '0')}:00`;
     const index = data.hourly && data.hourly.time ? data.hourly.time.indexOf(hour) : -1;
     if (index < 0) throw new Error('该日期暂未提供逐小时天气预报；请临近出发时再查询');
     const result = {
-      source: 'Open-Meteo', latitude: data.latitude, longitude: data.longitude, time: hour,
+      source: 'Open-Meteo', provider: 'open-meteo', latitude: data.latitude, longitude: data.longitude, time: hour,
+      conditionCode: String((data.hourly.weather_code && data.hourly.weather_code[index]) ?? ''),
       temperature: data.hourly.temperature_2m && data.hourly.temperature_2m[index],
       apparentTemperature: data.hourly.apparent_temperature && data.hourly.apparent_temperature[index],
       precipitationProbability: data.hourly.precipitation_probability && data.hourly.precipitation_probability[index],
@@ -1216,6 +1942,8 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
       windGusts: data.hourly.wind_gusts_10m && data.hourly.wind_gusts_10m[index],
       queriedAt: new Date().toISOString(),
     };
+    result.sunrise = data.daily?.sunrise?.[0] || null; result.sunset = data.daily?.sunset?.[0] || null;
+    const isDay = daylight(time, result.sunrise, result.sunset); result.isNight = isDay === null ? null : !isDay;
     cache.set(cacheKey, result);
     return { statusCode: 200, data: { ...result, cached: false } };
   }
@@ -1227,7 +1955,7 @@ function createAmapRoutes({ amapKey, qweatherKey }) {
     return { statusCode: 200, data: { mode: isMobile ? 'mobile' : 'desktop' } };
   }
 
-  return { geocode, placePhotos, placeDetails, calculateRoute, weather, previewMode };
+  return { geocode, placePhotos, placeDetails, mapImage, calculateRoute, weather, previewMode };
 }
 
 
@@ -1311,13 +2039,14 @@ function createRouter({ store, amapKey, qweatherKey }) {
 
     // 网页端复用：高德/天气查询（GET 取 query，路线取 body）与预览模式。
     // 公网域名暴露时高德类接口必须登录，防止未授权消耗配额。
-    if (['geocode', 'place-photos', 'place-details', 'route', 'weather'].includes(resource)) {
+    if (['geocode', 'place-photos', 'place-details', 'map-image', 'route', 'weather'].includes(resource)) {
       if (!user) return { statusCode: 401, data: { ok: false, error: '未登录' } };
     }
     try {
       if (resource === 'geocode') return await amap.geocode({ ...query, ...(body && typeof body === 'object' ? body : {}) });
       if (resource === 'place-photos') return await amap.placePhotos({ ...query, ...(body && typeof body === 'object' ? body : {}) });
       if (resource === 'place-details') return await amap.placeDetails({ ...query, ...(body && typeof body === 'object' ? body : {}) });
+      if (resource === 'map-image') return await amap.mapImage({ ...query, ...(body && typeof body === 'object' ? body : {}) });
       if (resource === 'route' && method === 'POST') return await amap.calculateRoute(body);
       if (resource === 'weather') return await amap.weather({ ...query, ...(body && typeof body === 'object' ? body : {}) });
       if (resource === 'preview-mode') return await amap.previewMode(headers);
@@ -1352,7 +2081,7 @@ function createRouter({ store, amapKey, qweatherKey }) {
       // 轻量计划接口：查看/切换/新建/复制/删除
       if (action === 'plan' && method === 'GET') return trips.getPlan(user._id, id);
       if (action === 'plan' && method === 'PUT') return trips.switchPlan(user._id, id, body);
-      if (action === 'plans' && sub === 'copy' && method === 'POST') return trips.copyPlan(user._id, id);
+      if (action === 'plans' && sub === 'copy' && method === 'POST') return trips.copyPlan(user._id, id, body);
       if (action === 'plans' && method === 'POST') return trips.createPlan(user._id, id, body);
       if (action === 'plans' && method === 'DELETE') return trips.removePlan(user._id, id, body);
       // 地点 / 账本轻量接口
@@ -1375,9 +2104,14 @@ function createRouter({ store, amapKey, qweatherKey }) {
       if (action === 'export' && method === 'POST') return trips.exportJson(user._id, id);
       if (action === 'share' && method === 'POST') return trips.share(user._id, id, body);
       if (action === 'members' && method === 'GET') return trips.members(user._id, id);
+      if (action === 'members' && method === 'PUT') return trips.updateMember(user._id, id, body);
+      if (action === 'members' && method === 'DELETE') return trips.removeMember(user._id, id, body);
+      if (action === 'backups' && sub === 'restore' && method === 'POST') return trips.restoreBackup(user._id, id, body);
+      if (action === 'backups' && method === 'GET') return trips.listBackups(user._id, id);
+      if (action === 'backups' && method === 'POST') return trips.createBackup(user._id, id);
       if (method === 'GET') return trips.get(user._id, id);
       if (method === 'PUT') return trips.update(user._id, id, body);
-      if (method === 'DELETE') return trips.remove(user._id, id);
+      if (method === 'DELETE') return trips.remove(user._id, id, body);
       return { statusCode: 405, data: { ok: false, error: '方法不允许' } };
     }
 

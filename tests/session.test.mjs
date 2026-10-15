@@ -63,6 +63,20 @@ test('load without catalog falls back to plan snapshot locations', () => {
   assert.deepEqual(state.universalLocations, planLocations);
 });
 
+test('load restores referenced plan locations from universal catalog without changing ids', () => {
+  const { session, state } = setup();
+  const referenced = { id: 'missing-1', name: '被误删的地点', address: '新疆某地' };
+  session.loadFileContainer({
+    activeVersion: 'p1', plans: [{ id: 'p1', name: 'A' }],
+    versions: { p1: { name: 'A', schedule: [{ locationId: referenced.id }], locations: [], routes: [] } },
+    locations: [referenced], routes: []
+  });
+  session.load({ name: 'A', schedule: [{ locationId: referenced.id }], locations: [], routes: [] }, 'p1');
+  assert.equal(state.locations.length, 1);
+  assert.deepEqual(state.locations[0], referenced);
+  assert.equal(state.schedule[0].locationId, referenced.id, '恢复后原事件关联保持不变');
+});
+
 test('save stores snapshot, commits history and queues file save', () => {
   const { session, state, queueCalls, history } = setup();
   state.plans = [{ id: 'p1', name: 'A' }];
@@ -87,4 +101,14 @@ test('planIdFromName normalizes to kebab-case id with suffix', () => {
   const id = session.planIdFromName('新疆 北疆·方案A');
   assert.match(id, /^新疆-北疆-方案a-[0-9a-f]{8}$/);
   assert.match(session.planIdFromName(''), /^plan-[0-9a-f]{8}$/);
+});
+
+test('saving preserves unknown root and plan fields instead of silently dropping extensions', () => {
+  const { session, state } = setup();
+  session.loadFileContainer({ activeVersion: 'p1', plans: [{ id: 'p1', name: 'sample' }],
+    extension: { keep: true }, versions: { p1: { schedule: [], customNote: 'keep' } } });
+  state.versionKey = 'p1';
+  session.save();
+  assert.deepEqual(session.fileSavePayload().extension, { keep: true });
+  assert.equal(session.snapshotForPlan('p1').customNote, 'keep');
 });

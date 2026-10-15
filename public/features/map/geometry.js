@@ -36,7 +36,7 @@ export function createRouteOverlapTools(policy = { proximityMeters: 400, minCorr
         carriedDistance += routePointDistanceMeters(points[index - 1], points[index]);
         if (carriedDistance >= 250) { result.push({ point: points[index], distanceFromPrevious: carriedDistance }); carriedDistance = 0; }
       }
-      if (result.at(-1)?.point !== points.at(-1)) result.push({ point: points.at(-1), distanceFromPrevious: carriedDistance });
+      if ((result[result.length - 1]?.point) !== points[points.length - 1]) result.push({ point: points[points.length - 1], distanceFromPrevious: carriedDistance });
       return result;
     };
     const gridSize = .004;
@@ -67,7 +67,7 @@ export function createRouteOverlapTools(policy = { proximityMeters: 400, minCorr
 export function translateRouteForDisplay(latLngs, offset, projection) {
   if (!projection || !offset || latLngs.length < 2) return latLngs;
   const points = latLngs.map(projection.toPoint);
-  let start = points[0], end = points.at(-1);
+  let start = points[0], end = points[points.length - 1];
   if (start.distanceTo(end) < 2) {
     for (let index = points.length - 1; index > 0; index -= 1) if (points[0].distanceTo(points[index]) >= 2) { end = points[index]; break; }
   }
@@ -87,7 +87,7 @@ export function routeArrowPose(latLngs, fraction = .52, projection) {
   }
   if (!totalLength) return null;
   const target = totalLength * Math.min(.9, Math.max(.1, fraction));
-  const segment = segments.find(item => item.start + item.length >= target) || segments.at(-1);
+  const segment = segments.find(item => item.start + item.length >= target) || segments[segments.length - 1];
   const progress = Math.max(0, Math.min(1, (target - segment.start) / segment.length));
   const x = segment.from.x + (segment.to.x - segment.from.x) * progress, y = segment.from.y + (segment.to.y - segment.from.y) * progress;
   return { latLng: projection.toLatLng(x, y), bearing: Math.atan2(segment.to.y - segment.from.y, segment.to.x - segment.from.x) * 180 / Math.PI };

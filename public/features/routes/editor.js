@@ -9,6 +9,12 @@ export function createRouteEditor({
   showDayOverview, showDriveSegment, geocode, confirmNewPlace, typeForTitle,
   selectedPlaceIds, calculateRouteTotals, fmtDuration, routeForScheduleEvent
 }) {
+  const isFlightEvent = event => event?.transportInfo?.kind === 'flight' || Boolean(event?.flightInfo);
+  function showInlineStatus(node, selector, message = '', tone = 'error') {
+    const status = $(selector, node); if (!status) return;
+    status.textContent = message; status.hidden = !message;
+    if (message) status.dataset.tone = tone; else delete status.dataset.tone;
+  }
   function addItem(data = {}) {
     const node = template.content.firstElementChild.cloneNode(true);
     node.dataset.id = crypto.randomUUID();
@@ -36,20 +42,26 @@ export function createRouteEditor({
       $('.item-main', node).insertBefore(placeName, $('.address', node));
       if (place?.address) $('.address', node).value = place.address;
       const createPlace = document.createElement('button'); createPlace.type = 'button'; createPlace.className = 'place-create'; createPlace.textContent = place ? '更新关联地点并查询' : '创建地点并查询';
-      createPlace.hidden = event?.type === 'drive' || event?.type === 'flight'; createPlace.onclick = async clickEvent => { clickEvent.stopPropagation(); await createOrUpdatePlaceForNode(node); };
+      createPlace.hidden = event?.type === 'drive' || isFlightEvent(event); createPlace.onclick = async clickEvent => { clickEvent.stopPropagation(); await createOrUpdatePlaceForNode(node); };
       $('.item-main', node).insertBefore(createPlace, locate);
+      const placeStatus = document.createElement('small'); placeStatus.className = 'inline-operation-status place-operation-status'; placeStatus.hidden = true; placeStatus.setAttribute('role', 'status'); placeStatus.setAttribute('aria-live', 'polite');
+      $('.item-main', node).insertBefore(placeStatus, createPlace);
       const routeInline = document.createElement('section'); routeInline.className = 'route-inline'; routeInline.hidden = event?.type !== 'drive';
-      routeInline.innerHTML = '<b>路程起终点</b><div class="route-inline-grid"><input class="inline-origin-name" placeholder="起点名称"><input class="inline-origin-address" placeholder="起点地址"><input class="inline-destination-name" placeholder="终点名称"><input class="inline-destination-address" placeholder="终点地址"></div><textarea class="inline-waypoints" placeholder="途经点（可选），每行：名称｜地址"></textarea><button type="button" class="inline-route-create">查询地点并生成路线</button>';
+      routeInline.innerHTML = '<b>路程起终点</b><div class="route-inline-grid"><input class="inline-origin-name" placeholder="起点名称"><input class="inline-origin-address" placeholder="起点地址"><input class="inline-destination-name" placeholder="终点名称"><input class="inline-destination-address" placeholder="终点地址"></div><textarea class="inline-waypoints" placeholder="途经点（可选），每行：名称｜地址"></textarea><small class="inline-operation-status route-operation-status" role="status" aria-live="polite" hidden></small><button type="button" class="inline-route-create">查询地点并生成路线</button>';
       $('.item-main', node).insertBefore(routeInline, locate); fillInlineRouteControls(node, data.scheduleIndex);
       $('.inline-route-create', node).onclick = async clickEvent => { clickEvent.stopPropagation(); await createRouteFromNode(node); };
       refreshNodePlaceLink(node, data.scheduleIndex);
       const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'event-edit'; edit.textContent = '编辑事件 / 关联地点';
       edit.onclick = event => { event.stopPropagation(); openScheduleEditor(Number(node.dataset.scheduleIndex)); };
       $('.item-main', node).append(edit);
-      if (event?.type === 'drive' || event?.type === 'flight') { $('.address', node).hidden = true; $('.place-query-name', node).hidden = true; }
+      if (event?.type === 'drive' || isFlightEvent(event)) { $('.address', node).hidden = true; $('.place-query-name', node).hidden = true; }
     }
     node.addEventListener('change', () => { const type = $('.type', node).value, isDrive = type === 'drive', isFlight = type === 'flight'; $('.place-create', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.place-query-name', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.address', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.route-inline', node)?.toggleAttribute('hidden', !isDrive); syncNodeToSchedule(node); save(); renderRouteTotals(); });
     node.addEventListener('click', event => { if (event.target.closest('input,select,textarea,button,label')) return; const index = Number(node.dataset.scheduleIndex); Number.isInteger(index) ? focusScheduleEvent(index) : focusNode(node); });
+    node.addEventListener('input', event => {
+      if (event.target.matches('.inline-origin-name,.inline-origin-address,.inline-destination-name,.inline-destination-address,.inline-waypoints')) showInlineStatus(node, '.route-operation-status');
+      if (event.target.matches('.place-query-name,.address')) showInlineStatus(node, '.place-operation-status');
+    });
     node.addEventListener('dragstart', () => { state.dragging=node; node.classList.add('dragging'); });
     node.addEventListener('dragend', () => {
       node.classList.remove('dragging'); state.dragging=null;
@@ -69,7 +81,7 @@ export function createRouteEditor({
   function refreshNodePlaceLink(node, index) {
     const oldLink = $('.event-place-link', node); oldLink?.remove();
     const event = state.schedule[index];
-    if (event?.type === 'drive' || event?.type === 'flight') return;
+    if (event?.type === 'drive' || isFlightEvent(event)) return;
     const place = state.locations.find(item => item.id === event?.locationId);
     if (!place) return;
     const link = document.createElement('small'); link.className = 'event-place-link'; link.textContent = `关联地点：${place.name || '未命名地点'}${place.address ? '' : '（地址待定）'}`;
@@ -92,7 +104,7 @@ export function createRouteEditor({
   function parseInlineWaypoints(text) {
     return text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map((line, index) => {
       const parts = line.split(/[｜|]/).map(part => part.trim());
-      return parts.length > 1 ? { name: parts[0] || `途经点 ${index + 1}`, address: parts.slice(1).join('｜') } : { name: line, address: line };
+      return parts.length > 1 ? { name: parts[0] || `途经点 ${index + 1}`, address: parts.slice(1).join('｜') } : { name: line, address: '' };
     });
   }
 
@@ -102,9 +114,14 @@ export function createRouteEditor({
     const origin = { name: $('.inline-origin-name', node).value.trim(), address: $('.inline-origin-address', node).value.trim() };
     const destination = { name: $('.inline-destination-name', node).value.trim(), address: $('.inline-destination-address', node).value.trim() };
     const waypoints = parseInlineWaypoints($('.inline-waypoints', node).value);
-    if (!origin.name || !origin.address || !destination.name || !destination.address) { alert('请完整填写起点和终点的名称、地址。'); return; }
-    if (waypoints.some(place => !place.name || !place.address)) { alert('请按“名称｜地址”逐行填写途经点。'); return; }
+    if (!origin.name || !origin.address || !destination.name || !destination.address) {
+      showInlineStatus(node, '.route-operation-status', '请完整填写起点和终点的名称、地址。');
+      const target = !origin.name ? $('.inline-origin-name', node) : !origin.address ? $('.inline-origin-address', node) : !destination.name ? $('.inline-destination-name', node) : $('.inline-destination-address', node);
+      target.focus(); return;
+    }
+    if (waypoints.some(place => !place.name || !place.address)) { showInlineStatus(node, '.route-operation-status', '请按“名称｜地址”逐行填写途经点。'); $('.inline-waypoints', node).focus(); return; }
     const button = $('.inline-route-create', node); button.disabled = true; button.textContent = '正在查询地点…';
+    showInlineStatus(node, '.route-operation-status', '正在查询起点、终点和途经地点…', 'info');
     try {
       const originPlace = await resolveInlinePlace(origin.name, origin.address);
       const destinationPlace = await resolveInlinePlace(destination.name, destination.address);
@@ -117,15 +134,20 @@ export function createRouteEditor({
       save(); renderLocations(); renderSchedule(state.schedule); fillInlineRouteControls(node, index);
       button.textContent = '正在生成高德路线…';
       await showDriveSegment(index); await showDayOverview(state.dayFilter);
-    } catch (error) { alert(error.message || '高德暂时无法查询地点或生成路线。'); }
+      showInlineStatus(node, '.route-operation-status', '地点与路线已更新。', 'success');
+    } catch (error) { showInlineStatus(node, '.route-operation-status', error.message || '高德暂时无法查询地点或生成路线。'); }
     finally { button.disabled = false; button.textContent = '更新地点和路线'; }
   }
 
   async function createOrUpdatePlaceForNode(node) {
-    const index = Number(node.dataset.scheduleIndex), event = state.schedule[index]; if (!event || event.type === 'drive' || event.type === 'flight') return;
+    const index = Number(node.dataset.scheduleIndex), event = state.schedule[index]; if (!event || event.type === 'drive' || isFlightEvent(event)) return;
     const name = $('.place-query-name', node).value.trim(); const address = $('.address', node).value.trim();
-    if (!name || !address) { alert('请先填写地点名称和地点地址。'); return; }
+    if (!name || !address) {
+      showInlineStatus(node, '.place-operation-status', '请先填写地点名称和地点地址。');
+      (!name ? $('.place-query-name', node) : $('.address', node)).focus(); return;
+    }
     const button = $('.place-create', node); button.disabled = true; button.textContent = '正在查询高德…';
+    showInlineStatus(node, '.place-operation-status', '正在查询高德位置…', 'info');
     try {
       const point = await geocode(address, name);
       let place = state.locations.find(item => item.id === event.locationId);
@@ -134,7 +156,8 @@ export function createRouteEditor({
       Object.assign(place, { type: event.type === 'transport' ? 'spot' : event.type, name, address, note: event.detail || '', resolved: { name: point.name || name, address: point.formatted_address || address, location: point.location } });
       event.locationId = place.id; event.address = '';
       refreshNodePlaceLink(node, index); renderLocations(); renderSchedule(state.schedule); save(); focusScheduleEvent(index);
-    } catch (error) { alert(error.message || '高德暂时无法定位这个地点。'); }
+      showInlineStatus(node, '.place-operation-status', '关联地点已更新。', 'success');
+    } catch (error) { showInlineStatus(node, '.place-operation-status', error.message || '高德暂时无法定位这个地点。'); }
     finally { button.disabled = false; button.textContent = event.locationId ? '更新关联地点并查询' : '创建地点并查询'; }
   }
 
@@ -147,6 +170,15 @@ export function createRouteEditor({
     ids.forEach(id => selectedPlaceIds.delete(id));
     state.schedule.forEach(event => {
       if (ids.has(event.locationId)) delete event.locationId;
+      if (event.flightInfo) {
+        if (ids.has(event.flightInfo.departurePlaceId)) delete event.flightInfo.departurePlaceId;
+        if (ids.has(event.flightInfo.stopoverPlaceId)) delete event.flightInfo.stopoverPlaceId;
+        if (ids.has(event.flightInfo.arrivalPlaceId)) delete event.flightInfo.arrivalPlaceId;
+      }
+      if (event.transportInfo?.kind === 'train') {
+        if (ids.has(event.transportInfo.departurePlaceId)) delete event.transportInfo.departurePlaceId;
+        if (ids.has(event.transportInfo.arrivalPlaceId)) delete event.transportInfo.arrivalPlaceId;
+      }
       if (!event.routeLinks) return;
       if (removedRouteIds.has(event.routeLinks.routeId)) delete event.routeLinks.routeId;
       if (ids.has(event.routeLinks.originPlaceId)) delete event.routeLinks.originPlaceId;
@@ -171,7 +203,7 @@ export function createRouteEditor({
     if (!event || !node) return;
     $('.date', node).value = event.date; $('.start-time', node).value = event.start; $('.end-time', node).value = event.end || ''; $('.name', node).value = event.title; $('.note', node).value = event.detail || ''; $('.type', node).value = event.type || typeForTitle(event.title);
     const place = state.locations.find(item => item.id === event.locationId); $('.place-query-name', node).value = place?.name || ''; $('.address', node).value = place?.address || event.address || '';
-    const isDrive = event.type === 'drive', isFlight = event.type === 'flight'; $('.place-create', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.place-query-name', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.address', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.route-inline', node)?.toggleAttribute('hidden', !isDrive); fillInlineRouteControls(node, index); refreshNodePlaceLink(node, index);
+    const isDrive = event.type === 'drive', isFlight = isFlightEvent(event); $('.place-create', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.place-query-name', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.address', node)?.toggleAttribute('hidden', isDrive || isFlight); $('.route-inline', node)?.toggleAttribute('hidden', !isDrive); fillInlineRouteControls(node, index); refreshNodePlaceLink(node, index);
   }
 
   function routeTotals() {
@@ -198,6 +230,24 @@ export function createRouteEditor({
     renderRouteTotals(true);
     button.setAttribute('aria-expanded', 'true');
   };
+
+  function closeRouteSummary() {
+    const detail = $('#routeSummaryDetail');
+    if (!detail || detail.hidden) return;
+    detail.hidden = true;
+    $('#routeBtn')?.setAttribute('aria-expanded', 'false');
+  }
+
+  document.addEventListener('pointerdown', event => {
+    const detail = $('#routeSummaryDetail');
+    if (detail?.hidden || detail?.contains(event.target) || $('#routeBtn')?.contains(event.target)) return;
+    closeRouteSummary();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || $('#routeSummaryDetail')?.hidden) return;
+    closeRouteSummary();
+    $('#routeBtn')?.focus();
+  });
 
   return { addItem, refreshNodePlaceLink, fillInlineRouteControls, parseInlineWaypoints, createRouteFromNode, createOrUpdatePlaceForNode, refreshEventCards, removeLocations, syncNodeToSchedule, updateNodeFromSchedule, routeTotals, renderRouteTotals };
 }

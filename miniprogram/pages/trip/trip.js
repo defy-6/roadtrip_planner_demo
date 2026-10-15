@@ -1,5 +1,7 @@
 // 行程工作台：时间表 / 地图 / 计划 三视图 + 分享管理
-const { request } = require('../../utils/request');
+const { request, resetTripRevision } = require('../../utils/request');
+const { isVersionConflict, resolveVersionConflict } = require('../../utils/conflict');
+const { offerRestore } = require('../../utils/drafts');
 
 const TYPE_LABELS = {
   spot: '景点', drive: '路程', flight: '航班', transport: '交通',
@@ -83,7 +85,9 @@ Page({
 
   // 每次显示都刷新（首次 + 从编辑页返回），保证编辑结果立即可见
   onShow() {
-    if (this.data.id) this.loadSchedule();
+    if (this.data.id) this.loadSchedule().then(() => {
+      if (!this.__recoveryOffered) { this.__recoveryOffered = true; offerRestore(this, this.data.id); }
+    });
   },
 
   // 计划切换/新建/复制/删除后调用：重置撤销栈（避免把切换前的旧计划压栈）
@@ -94,7 +98,21 @@ Page({
     this.setData({ canUndo: false, canRedo: false });
   },
 
+  // 版本冲突统一处置：保留服务端返回的冲突码，交由用户显式选择"重新加载（丢弃本地）"或
+  // "保留本地（不覆盖云端）"，绝不自动覆盖任一方。返回 true 表示本次错误已被当作冲突处理。
+  async handleVersionConflict(err, reload) {
+    if (!isVersionConflict(err)) return false;
+    this.setData({ busy: false, error: '' });
+    const reloaded = await resolveVersionConflict({ error: err, onReload: reload });
+    wx.showToast({
+      title: reloaded ? '已加载云端最新数据' : '已保留本次改动，请稍后重试',
+      icon: 'none',
+    });
+    return true;
+  },
+
   async loadSchedule() {
+    resetTripRevision(this.data.id);
     this.setData({ loading: true, error: '' });
     try {
       const res = await request(`/api/trips/${this.data.id}/schedule`);
@@ -125,8 +143,10 @@ Page({
       this.renderEvents();
       // 地图可能依赖刚加载的 schedule 路线
       if (this.data.activeTab === 'map') this.renderMap();
+      return true;
     } catch (err) {
       this.setData({ error: err.message, loading: false });
+      return false;
     }
   },
 
@@ -164,6 +184,8 @@ Page({
       this.renderEvents();
       return true;
     } catch (err) {
+      // 冲突：不写入、不覆盖云端；调用方据返回值把本地改动压回撤销栈保留。
+      if (await this.handleVersionConflict(err, () => this.loadSchedule())) return false;
       this.setData({ busy: false, error: err.message });
       return false;
     }
@@ -498,6 +520,7 @@ Page({
       await this.loadPlan();
       wx.showToast({ title: '已切换计划', icon: 'none' });
     } catch (err) {
+      if (await this.handleVersionConflict(err, async () => { await this.loadSchedule(); await this.loadPlan(); })) return;
       this.setData({ busy: false, error: err.message });
     }
   },
@@ -519,6 +542,7 @@ Page({
           await this.loadPlan();
           wx.showToast({ title: '已创建', icon: 'success' });
         } catch (err) {
+          if (await this.handleVersionConflict(err, async () => { await this.loadSchedule(); await this.loadPlan(); })) return;
           this.setData({ busy: false, error: err.message });
         }
       },
@@ -541,6 +565,7 @@ Page({
           await this.loadPlan();
           wx.showToast({ title: '已复制', icon: 'success' });
         } catch (err) {
+          if (await this.handleVersionConflict(err, async () => { await this.loadSchedule(); await this.loadPlan(); })) return;
           this.setData({ busy: false, error: err.message });
         }
       },
@@ -572,6 +597,7 @@ Page({
               await this.loadPlan();
               wx.showToast({ title: '已删除', icon: 'success' });
             } catch (err) {
+              if (await this.handleVersionConflict(err, async () => { await this.loadSchedule(); await this.loadPlan(); })) return;
               this.setData({ busy: false, error: err.message });
             }
           },
@@ -727,6 +753,7 @@ Page({
               await request(`/api/trips/${this.data.id}/categories`, { method: 'PUT', data: { categories } });
               wx.showToast({ title: '已添加分类', icon: 'success' });
             } catch (err) {
+              if (await this.handleVersionConflict(err, () => this.loadLocations())) return;
               wx.showToast({ title: err.message, icon: 'none' });
             }
           },
@@ -848,8 +875,17 @@ Page({
     wx.showToast({ title: `已更新 ${updated} 个事件天气`, icon: 'none' });
   },
 
-  // ---------- 导出 JSON（云存储 → 下载分享） ----------
+  // ---------- 导出 JSON（云存储 → 下载分享）：仅当前方案，不是完整备份 ----------
   exportJson() {
+    wx.showModal({
+      title: '导出当前方案 JSON',
+      content: '这是“当前方案”的方案级导出：不含其它方案、行程账本费用与通用地点库，不是完整旅行备份。需要完整备份请使用“创建完整备份”。',
+      confirmText: '继续导出',
+      success: modal => { if (modal.confirm) this.downloadPlanJson(); },
+    });
+  },
+
+  downloadPlanJson() {
     wx.showLoading({ title: '正在导出…' });
     request(`/api/trips/${this.data.id}/export`, { method: 'POST' })
       .then(async res => {
@@ -858,7 +894,7 @@ Page({
         wx.hideLoading();
         wx.shareFileMessage({
           filePath: dl.tempFilePath,
-          fileName: `${this.data.name || '行程'}.json`,
+          fileName: `${this.data.name || '行程'}-当前方案.json`,
           success: () => wx.showToast({ title: '已分享', icon: 'success' }),
           fail: () => wx.showModal({ title: '导出成功', content: '文件已生成（可到云存储 console 下载）', showCancel: false }),
         });
@@ -866,6 +902,78 @@ Page({
       .catch(err => {
         wx.hideLoading();
         wx.showToast({ title: err.message, icon: 'none' });
+      });
+  },
+
+  // ---------- 完整旅行备份（全部方案/事件/费用/地点关联/路线/偏好 + 通用地点库） ----------
+  createFullBackup() {
+    wx.showLoading({ title: '正在备份…' });
+    request(`/api/trips/${this.data.id}/backups`, { method: 'POST' })
+      .then(res => {
+        wx.hideLoading();
+        const assets = (res.backup && res.backup.assets) || null;
+        const photos = assets && assets.photos ? assets.photos : null;
+        const photoNote = photos && photos.remote
+          ? `\n注意：其中 ${photos.remote} 张地点图片只保存了网络链接，无法离线还原图片本体。`
+          : '';
+        const warn = res.warnings && res.warnings.length ? `\n${res.warnings.join('；')}` : '';
+        wx.showModal({ title: '已创建完整备份', content: `已归档全部方案、事件、费用、地点关联与路线。${photoNote}${warn}`, showCancel: false });
+      })
+      .catch(err => { wx.hideLoading(); wx.showToast({ title: err.message, icon: 'none' }); });
+  },
+
+  restoreFullBackup() {
+    wx.showLoading({ title: '读取备份…' });
+    request(`/api/trips/${this.data.id}/backups`)
+      .then(res => {
+        wx.hideLoading();
+        const list = res.backups || [];
+        if (!list.length) { wx.showModal({ title: '暂无备份', content: '请先创建一次完整备份。', showCancel: false }); return; }
+        wx.showActionSheet({
+          itemList: list.map(item => `${new Date(item.created_at).toLocaleString()} ${item.plan_name || ''}`.trim()),
+          success: choice => this.confirmRestoreFullBackup(list[choice.tapIndex]),
+          fail: () => {},
+        });
+      })
+      .catch(err => { wx.hideLoading(); wx.showToast({ title: err.message, icon: 'none' }); });
+  },
+
+  confirmRestoreFullBackup(backup) {
+    if (!backup) return;
+    wx.showModal({
+      title: '恢复完整旅行备份',
+      content: '将覆盖全部方案、事件、费用、地点与路线。恢复本人备份还会替换账号通用地点库，影响其他行程。恢复前自动保留快照；网络图片链接不保证离线可用。',
+      confirmText: '恢复并覆盖',
+      success: modal => { if (modal.confirm) this.runRestoreFullBackup(backup._id, false); },
+    });
+  },
+
+  runRestoreFullBackup(backupId, allowMissingLinks) {
+    wx.showLoading({ title: '正在恢复…' });
+    request(`/api/trips/${this.data.id}/backups/restore`, { method: 'POST', data: { backup_id: backupId, allow_missing_links: !!allowMissingLinks } })
+      .then(res => {
+        wx.hideLoading();
+        const warn = res.warnings && res.warnings.length ? `\n${res.warnings.join('；')}` : '';
+        wx.showModal({
+          title: '已恢复',
+          content: `当前行程已回到该备份状态。${warn}`,
+          showCancel: false,
+          success: () => { this.loadPlan(); this.loadSchedule(); this.loadLocations(); },
+        });
+      })
+      .catch(err => {
+        wx.hideLoading();
+        // 关联缺失：服务端冲突码被完整保留，必须由用户显式确认后才忽略，绝不静默覆盖。
+        if (err.code === 'BACKUP_LINK_MISSING') {
+          wx.showModal({
+            title: '备份存在关联缺失',
+            content: `${err.message}\n仍要恢复吗？缺失的关联会保持为空。`,
+            confirmText: '仍然恢复',
+            success: modal => { if (modal.confirm) this.runRestoreFullBackup(backupId, true); },
+          });
+          return;
+        }
+        wx.showModal({ title: '恢复失败', content: err.message || '恢复失败', showCancel: false });
       });
   },
 
@@ -904,6 +1012,7 @@ Page({
           this.renderLocations();
           wx.showToast({ title: '已删除', icon: 'success' });
         } catch (err) {
+          if (await this.handleVersionConflict(err, () => this.loadLocations())) return;
           wx.showToast({ title: err.message, icon: 'none' });
         }
       },

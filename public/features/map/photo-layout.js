@@ -1,5 +1,9 @@
 export function calloutBox(point, placement, compact = false, scale = 1) {
-  const width = (compact ? 88 : 116) * scale, height = (compact ? 92 : 120) * scale, gap = (compact ? 8 : 10) * scale;
+  const width = (compact ? 76 : 100) * scale, height = (compact ? 78 : 102) * scale, gap = (compact ? 7 : 9) * scale;
+  if (placement === 'top-left') return { left: point.x - gap - width, top: point.y - gap - height, right: point.x - gap, bottom: point.y - gap };
+  if (placement === 'top-right') return { left: point.x + gap, top: point.y - gap - height, right: point.x + gap + width, bottom: point.y - gap };
+  if (placement === 'bottom-left') return { left: point.x - gap - width, top: point.y + gap, right: point.x - gap, bottom: point.y + gap + height };
+  if (placement === 'bottom-right') return { left: point.x + gap, top: point.y + gap, right: point.x + gap + width, bottom: point.y + gap + height };
   if (placement === 'bottom') return { left: point.x - width / 2, top: point.y + gap, right: point.x + width / 2, bottom: point.y + gap + height };
   if (placement === 'left') return { left: point.x - gap - width, top: point.y - height / 2, right: point.x - gap, bottom: point.y + height / 2 };
   if (placement === 'right') return { left: point.x + gap, top: point.y - height / 2, right: point.x + gap + width, bottom: point.y + height / 2 };
@@ -25,7 +29,7 @@ export function segmentTouchesBox(first, second, box) {
 }
 
 export function layoutPhotoCallouts(entries, routeLatLngs, { toPoint, compact = false, scale = 1 }) {
-  const routePoints = routeLatLngs.map(toPoint).filter(Boolean), candidates = ['top', 'right', 'left', 'bottom'];
+  const routePoints = routeLatLngs.map(toPoint).filter(Boolean), candidates = ['top', 'right', 'left', 'bottom', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
   const prepared = entries.map(entry => ({ ...entry, point: toPoint(entry.latLng) })).filter(entry => entry.point);
   let states = [{ score: 0, placed: [] }];
   prepared.forEach((entry, entryIndex) => {

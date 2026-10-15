@@ -1,0 +1,22 @@
+/* Event, route and place editors share one touch-friendly web search result sheet. */
+html[data-preview-mode="mobile"] .place-search-results {
+  position: fixed !important;
+  z-index: 3200 !important;
+  left: max(14px,env(safe-area-inset-left)) !important;
+  right: max(14px,env(safe-area-inset-right)) !important;
+  width: auto !important;
+  max-height: min(42vh,320px);
+  margin-top: 4px !important;
+  border-color: var(--ui-line) !important;
+  border-radius: var(--ui-radius-sheet) !important;
+  background: #fff !important;
+  box-shadow: var(--ui-shadow) !important;
+}
+html[data-preview-mode="mobile"] .place-search-result {
+  min-height: 56px !important;
+  padding: 10px 13px !important;
+  border-color: #ecefec !important;
+}
+html[data-preview-mode="mobile"] .place-search-result b { font-size: 14px !important; }
+html[data-preview-mode="mobile"] .place-search-result small { font-size: 11px !important; }
+html[data-preview-mode="mobile"] .place-search-result:is(:focus,:hover) { background: var(--ui-green-soft) !important; }

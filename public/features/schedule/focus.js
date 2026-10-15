@@ -10,6 +10,7 @@ export function createScheduleFocus({
   getMapFocusDate, setMapFocusDate, getRenderedOverviewDate, setRenderedOverviewDate,
   isShareMode
 }) {
+  let previewPhotoObserver = null;
   function revealCorrespondingNode(node) {
     if (!node) return;
     document.querySelectorAll('.item.selected').forEach(item => item.classList.remove('selected'));
@@ -42,7 +43,7 @@ export function createScheduleFocus({
     } catch { /* 地址尚未能定位时保留节点选中状态 */ }
   }
 
-  async function showDriveSegment(index) {
+  async function showDriveSegment(index, { allowQuery = true } = {}) {
     const entry = state.schedule[index];
     const eventLinks = entry.routeLinks || {};
     const sharedRoute = routeForScheduleEvent(entry);
@@ -63,7 +64,7 @@ export function createScheduleFocus({
       showSavedDriveInfo(entry);
       return record;
     }
-    if (isShareMode) { showSavedDriveInfo(entry); return null; }
+    if (isShareMode || !allowQuery) { showSavedDriveInfo(entry); return null; }
     return calculateDriveRoute(stops, sharedRoute, entry.title, false, links.travelMode, links.transportMode, links.transit);
   }
 
@@ -107,15 +108,24 @@ export function createScheduleFocus({
     renderMapRouteLegend(entry.date);
     const node = [...itemsEl.children].find(item => Number(item.dataset.scheduleIndex) === index);
     document.querySelectorAll('.calendar-block').forEach(block => block.classList.toggle('selected', Number(block.dataset.scheduleIndex) === index));
+    if (document.documentElement.dataset.previewMode === 'mobile') {
+      const block = [...document.querySelectorAll('.calendar-block')].find(item => Number(item.dataset.scheduleIndex) === index);
+      const scroll = block?.closest('.schedule-scroll');
+      if (block && scroll) scroll.scrollTo({ top: Math.max(0, block.offsetTop - scroll.clientHeight * .28), behavior: 'smooth' });
+    }
     // 当天总览已存在时不重建所有点线，卡片切换仅更新高亮图层。
     if (getRenderedOverviewDate() !== (entry.date || '')) await showDayOverview(entry.date);
     if (state.selectedIndex !== index) return;
+    delete $('#map').dataset.previewPlaceIds;
+    delete $('#map').dataset.previewPhotoUrls;
+    previewPhotoObserver?.disconnect();
+    previewPhotoObserver = null;
+    document.querySelectorAll('.map-place-photo-callout.is-preview-source-hidden').forEach(callout => callout.classList.remove('is-preview-source-hidden'));
     $('#mapDayFilter').value = entry.date;
-    if (entry.type === 'flight') {
+    if (entry.transportInfo?.kind === 'flight' || entry.flightInfo) {
       await showFlightOnMap(index);
     } else if (entry.type === 'drive' || /驾驶|前往|返回|继续|返程|至/.test(entry.title)) {
-      if (skipDriveQuery) showSavedDriveInfo(entry);
-      else await showDriveSegment(index);
+      await showDriveSegment(index, { allowQuery: !skipDriveQuery });
     }
     else if (entry.locationId && state.locations.find(place => place.id === entry.locationId)?.address) {
       const place = state.locations.find(item => item.id === entry.locationId);
@@ -124,15 +134,34 @@ export function createScheduleFocus({
         if (!point?.location) { $('#routeDetail').innerHTML = `<b>${escapeHtml(entry.title)}</b><small>共享版本中尚未保存该地点坐标。</small>`; return; }
         if (state.selectedIndex !== index) return;
         const [lng, lat] = mapCoords(...point.location.split(',').map(Number));
+        $('#map').dataset.previewPlaceIds = place.id;
+        $('#map').dataset.previewPhotoUrls = JSON.stringify((place.photo || entry.photo) ? [new URL(place.photo || entry.photo, location.href).href] : []);
         let routeLayer = getRouteLayer();
         if (routeLayer) getMap().removeLayer(routeLayer);
         routeLayer = L.layerGroup().addTo(getMap());
         setRouteLayer(routeLayer);
         const color = markerColors[entry.type] || markerColors.spot;
         L.circleMarker([lat, lng], selectedPointStyle(place.type, { interactive: false })).addTo(routeLayer);
-        addSelectedPlacePhotoCallout(routeLayer, [lat, lng], place, entry.photo);
+        document.querySelectorAll('.map-place-photo-callout.is-preview-source-hidden').forEach(callout => callout.classList.remove('is-preview-source-hidden'));
+        const previewPhoto = place.photo || entry.photo || '';
+        const hideOverviewDuplicate = () => document.querySelectorAll('.map-place-photo-callout').forEach(callout => {
+          const samePhoto = previewPhoto && callout.querySelector('img')?.src === new URL(previewPhoto, location.href).href;
+          if ((callout.dataset.placeId === place.id || samePhoto) && !callout.classList.contains('is-preview-selected')) callout.classList.add('is-preview-source-hidden');
+        });
+        addSelectedPlacePhotoCallout(routeLayer, [lat, lng], place, entry.photo, [], [], false, '', 1.15, true);
+        hideOverviewDuplicate();
+        previewPhotoObserver = new MutationObserver(hideOverviewDuplicate);
+        previewPhotoObserver.observe($('#map'), { childList: true, subtree: true });
+        setTimeout(() => { previewPhotoObserver?.disconnect(); previewPhotoObserver = null; hideOverviewDuplicate(); }, 1800);
         setOverviewFocusOpacity(true);
-        fitSelectionWithDayContext(L.latLngBounds([[lat, lng]]), 12);
+        const map = getMap();
+        const focusPlace = () => {
+          map?.invalidateSize?.();
+          if (map?.getSize()?.x > 0 && map?.getSize()?.y > 0) map.flyTo([lat, lng], Math.max(map.getZoom(), 13), { animate: true, duration: .45 });
+        };
+        requestAnimationFrame(focusPlace);
+        setTimeout(focusPlace, 180);
+        setTimeout(focusPlace, 520);
         // 图片气泡承担高亮注记；详情在地图下方信息栏显示，避免 Leaflet 弹窗遮挡缩略图。
         getMap().closePopup();
       } catch { /* 地点无法解析时仍保留当天地图总览。 */ }

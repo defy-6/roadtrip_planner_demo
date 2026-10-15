@@ -9,11 +9,13 @@ function collectPageErrors(page) {
 test('desktop planner loads current data and opens primary editors', async ({ page }) => {
   const errors = collectPageErrors(page);
   await page.goto('/');
-  await expect(page.locator('#fileSaveStatus')).toContainText(/已从本地文件载入|已写入本地文件/);
+  await expect(page.locator('#fileSaveStatus')).toContainText(/已从本地文件载入|已写入本地文件|已同步云端/);
   const plannerData = await page.request.get('/api/planner-data').then(response => response.json());
-  expect(plannerData.data.versions[plannerData.data.activeVersion].schedule).toHaveLength(88);
-  await expect(page.locator('.calendar-block')).toHaveCount(85);
-  await expect(page.locator('.place-card')).toHaveCount(59);
+  const activePlan = plannerData.data.versions[plannerData.data.activeVersion];
+  expect(activePlan.schedule).toHaveLength(88);
+  await expect(page.locator('.calendar-block')).toHaveCount(89);
+  await expect(page.locator('.calendar-block.overnight-segment')).toHaveCount(2);
+  await expect(page.locator('.place-card')).toHaveCount(activePlan.locations.length);
   await expect(page.locator('#map')).toBeVisible();
 
   await page.locator('.place-card').first().dblclick();
@@ -22,20 +24,20 @@ test('desktop planner loads current data and opens primary editors', async ({ pa
   await expect(page.locator('#placeEditor')).toBeHidden();
 
   await page.reload();
-  await expect(page.locator('#fileSaveStatus')).toContainText(/已从本地文件载入|已写入本地文件/);
+  await expect(page.locator('#fileSaveStatus')).toContainText(/已从本地文件载入|已写入本地文件|已同步云端/);
   await page.locator('#addScheduleBtn').press('Enter');
   await expect(page.locator('#eventEditor')).toBeVisible();
   await expect(page.locator('#editorName')).toHaveValue('新安排');
   await page.locator('#editorCancel').click();
 
   await page.reload();
-  await expect(page.locator('#fileSaveStatus')).toContainText(/已从本地文件载入|已写入本地文件/);
+  await expect(page.locator('#fileSaveStatus')).toContainText(/已从本地文件载入|已写入本地文件|已同步云端/);
   await page.locator('#importFlightBtn').press('Enter');
   await expect(page.locator('#flightImporter')).toBeVisible();
   await page.locator('#flightImportCancel').click();
 
   await page.reload();
-  await expect(page.locator('#fileSaveStatus')).toContainText(/已从本地文件载入|已写入本地文件/);
+  await expect(page.locator('#fileSaveStatus')).toContainText(/已从本地文件载入|已写入本地文件|已同步云端/);
   await page.locator('#newPlanBtn').press('Enter');
   await expect(page.locator('#planDialog')).toBeVisible();
   await page.locator('#planDialogCancel').click();

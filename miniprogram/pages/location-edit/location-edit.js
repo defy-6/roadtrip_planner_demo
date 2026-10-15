@@ -1,5 +1,7 @@
 // 地点编辑器：新建/编辑行程地点
-const { request } = require('../../utils/request');
+const { request, resetTripRevision } = require('../../utils/request');
+const { isVersionConflict, resolveVersionConflict } = require('../../utils/conflict');
+const { offerRestore, withDraftLifecycle } = require('../../utils/drafts');
 
 const TYPES = [
   { value: 'spot', label: '景点' }, { value: 'geography', label: '地名' }, { value: 'food', label: '饮食' },
@@ -8,7 +10,7 @@ const TYPES = [
   { value: 'fuel', label: '加油站' }, { value: 'supply', label: '补给' },
 ];
 
-Page({
+Page(withDraftLifecycle({
   data: {
     id: '',
     locationId: '',
@@ -25,10 +27,11 @@ Page({
     const locationId = options.locationId || '';
     this.locations = [];
     this.setData({ id: options.id || '', locationId, isNew: !locationId });
-    this.load();
+    this.load().then(() => offerRestore(this, this.data.id));
   },
 
   async load() {
+    resetTripRevision(this.data.id);
     try {
       const [locRes, catRes] = await Promise.all([
         request(`/api/trips/${this.data.id}/locations`),
@@ -56,8 +59,10 @@ Page({
           });
         }
       }
+      return true;
     } catch (err) {
       this.setData({ error: err.message });
+      return false;
     }
   },
 
@@ -68,6 +73,15 @@ Page({
   onTypeChange(e) {
     const i = Number(e.detail.value);
     this.setData({ typeIndex: i, 'form.type': this.data.types[i].value });
+  },
+
+  // 冲突处置：保留冲突码，交由用户显式选择；返回上一页即拉取云端最新地点列表。
+  async handleConflict(err) {
+    if (!isVersionConflict(err)) return false;
+    this.setData({ saving: false, error: '' });
+    const reloaded = await resolveVersionConflict({ error: err, onReload: () => wx.navigateBack() });
+    if (!reloaded) wx.showToast({ title: '已保留本次编辑，请稍后重试', icon: 'none' });
+    return true;
   },
 
   async save() {
@@ -95,6 +109,7 @@ Page({
       wx.showToast({ title: '已保存', icon: 'success' });
       setTimeout(() => wx.navigateBack(), 500);
     } catch (err) {
+      if (await this.handleConflict(err)) return;
       this.setData({ saving: false, error: err.message });
     }
   },
@@ -114,9 +129,10 @@ Page({
           wx.showToast({ title: '已删除', icon: 'success' });
           setTimeout(() => wx.navigateBack(), 500);
         } catch (err) {
+          if (await this.handleConflict(err)) return;
           this.setData({ saving: false, error: err.message });
         }
       },
     });
   },
-});
+}, 'locations'));

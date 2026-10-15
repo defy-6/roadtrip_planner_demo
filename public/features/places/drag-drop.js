@@ -1,6 +1,21 @@
 export function createPlaceDropController({ state, $, escapeHtml, routeForScheduleEvent }) {
   const actionDialog = $('#placeDropEditor');
   const createDialog = $('#placeCreateDropEditor');
+  const actionPrompt = $('#placeDropPrompt');
+  const createPrompt = $('#placeCreateDropPrompt');
+  const updateButton = $('#placeDropUpdate');
+
+  actionDialog.classList.add('compact-form-dialog', 'place-drop-dialog');
+  createDialog.classList.add('compact-form-dialog', 'place-drop-dialog');
+  actionDialog.setAttribute('aria-describedby', 'placeDropPrompt');
+  createDialog.setAttribute('aria-describedby', 'placeCreateDropPrompt');
+  actionPrompt.setAttribute('role', 'status');
+  actionPrompt.setAttribute('aria-live', 'polite');
+  createPrompt.setAttribute('role', 'status');
+  createPrompt.setAttribute('aria-live', 'polite');
+  updateButton.classList.add('ghost');
+  updateButton.textContent = '更新地点';
+  updateButton.setAttribute('aria-label', '更新已关联地点');
 
   function chooseAction(event, place) {
     const route = event.type === 'drive' ? routeForScheduleEvent(event) : null;
@@ -18,19 +33,19 @@ export function createPlaceDropController({ state, $, escapeHtml, routeForSchedu
       return `<option value="${index}">${escapeHtml(target.label)}：${escapeHtml(current?.name || '未关联')}</option>`;
     }).join('');
     $('#placeDropTargetLabel').hidden = targets.length < 2;
-    $('#placeDropPrompt').textContent = `将“${place.name || '未命名地点'}”拖入“${event.title || '未命名事件'}”。请选择处理方式。`;
+    actionPrompt.textContent = `将“${place.name || '未命名地点'}”拖入“${event.title || '未命名事件'}”。请选择处理方式。`;
     actionDialog.showModal();
     return new Promise(resolve => {
       const close = action => { actionDialog.close(); resolve(action ? { action, target: targets[Number(select.value) || 0] } : null); };
       $('#placeDropCancel').onclick = () => close(null);
       $('#placeDropReplace').onclick = () => close('replace');
-      $('#placeDropUpdate').onclick = () => close('update');
+      updateButton.onclick = () => close('update');
       actionDialog.oncancel = dialogEvent => { dialogEvent.preventDefault(); close(null); };
     });
   }
 
   function confirmCreation(place, date, start, end) {
-    $('#placeCreateDropPrompt').textContent = `在 ${date} ${start}–${end} 新建“${place.name || '未命名地点'}”事件，并关联该地点？`;
+    createPrompt.textContent = `在 ${date} ${start}–${end} 新建“${place.name || '未命名地点'}”事件，并关联该地点？`;
     createDialog.showModal();
     return new Promise(resolve => {
       const close = confirmed => { createDialog.close(); resolve(confirmed); };

@@ -1,0 +1,17 @@
+/* Place-category form keeps the native color picker touchable and visually aligned. */
+html[data-preview-mode="mobile"] #placeCategoryEditor :is(h3, .editor-actions) {
+  background: var(--ui-surface) !important;
+  backdrop-filter: none !important;
+}
+html[data-preview-mode="mobile"] #placeCategoryEditor input[type="color"] {
+  height: 44px !important;
+  padding: 6px !important;
+  cursor: pointer;
+}
+html[data-preview-mode="mobile"] #placeCategoryEditor input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+html[data-preview-mode="mobile"] #placeCategoryEditor input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 7px;
+}

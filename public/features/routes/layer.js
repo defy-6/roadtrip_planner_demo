@@ -1,8 +1,8 @@
 // 路线图层：管理地图上的路线 polyline、方向箭头、序列徽标与图例。
 // 地图实例与图层由 runtime 通过 getter/setter 注入，本模块不管理地图生命周期。
 export function createRouteLayer({
-  state, $, escapeHtml, fmt, mapCoords, markerColors, mapDisplayType,
-  selectedPointStyle, addSelectedPlacePhotoCallout, setOverviewFocusOpacity, fitSelectionWithDayContext,
+  state, $, escapeHtml, fmt, mapCoords, markerColors, mapDisplayType, confirmAction,
+  selectedPointStyle, layoutPhotoCallouts, addSelectedPlacePhotoCallout, setOverviewFocusOpacity, fitSelectionWithDayContext,
   routeArrowPose, routeColorForDate, routeColorForSegment, dayDriveEvents,
   placeTypeName, placeTypeColor,
   getMap, getRouteLayer, setRouteLayer, getDayOverviewLayer,
@@ -18,12 +18,14 @@ export function createRouteLayer({
     if (!map) return;
     const coordinates = path.steps.flatMap(step => step.polyline.split(';').map(pair => mapCoords(...pair.split(',').map(Number))));
     const latLngs = coordinates.map(([lng, lat]) => [lat, lng]);
+    $('#map').dataset.previewPlaceIds = nodes.map(node => node?.id).filter(Boolean).join(',');
+    $('#map').dataset.previewPhotoUrls = JSON.stringify(nodes.map(node => node?.photo).filter(Boolean).map(photo => new URL(photo, location.href).href));
     let routeLayer = getRouteLayer();
     if (routeLayer) map.removeLayer(routeLayer);
     routeLayer = L.featureGroup().addTo(map);
     setRouteLayer(routeLayer);
-    L.polyline(latLngs, { color: '#fff', weight: 10, opacity: .9, interactive: false }).addTo(routeLayer);
-    const selectedLine = L.polyline(latLngs, { color: markerColors.drive, weight: 7, opacity: 1, className: 'selected-map-route' }).addTo(routeLayer);
+    L.polyline(latLngs, { pane: 'selectedRoutePane', color: '#fff', weight: 11, opacity: .96, interactive: false }).addTo(routeLayer);
+    const selectedLine = L.polyline(latLngs, { pane: 'selectedRoutePane', color: markerColors.drive, weight: 7, opacity: 1, className: 'selected-map-route' }).addTo(routeLayer);
     const routeName = routeInfo.name || nodes.map(node => node.name || node.title).filter(Boolean).join(' → ') || '当前路线';
     const routeDistance = Number(path.distance || 0), routeDuration = Number(path.duration || 0), routeTolls = Number(path.tolls || 0);
     const queryRecord = routeInfo.amap;
@@ -34,10 +36,17 @@ export function createRouteLayer({
       popupContent.innerHTML = routePopupHtml;
       const deleteButton = document.createElement('button');
       deleteButton.type = 'button'; deleteButton.className = 'route-map-delete';
-      deleteButton.style.cssText = 'display:block;margin-top:10px;background:#fff4f1;color:#a44435;border:1px solid #dfa99f;padding:6px 9px;font-size:12px';
       deleteButton.textContent = routeInfo.routeId ? '删除这条路线' : '从地图移除路线';
-      deleteButton.onclick = () => {
-        if (routeInfo.routeId && !confirm(`确定删除通用路线“${routeName}”吗？关联此路线的时刻表事件会保留，但会解除路线关联。`)) return;
+      deleteButton.onclick = async () => {
+        if (routeInfo.routeId) {
+          const confirmed = await confirmAction({
+            title: '删除通用路线',
+            message: `确定删除“${routeName}”吗？`,
+            detail: '关联此路线的时刻表事件会保留，但会解除路线关联。此操作无法撤销。',
+            confirmLabel: '删除路线'
+          });
+          if (!confirmed) return;
+        }
         if (routeInfo.routeId) removeRoute(routeInfo.routeId);
         if (getRouteLayer()) { getMap().removeLayer(getRouteLayer()); setRouteLayer(null); }
         getMap().closePopup();
@@ -49,27 +58,48 @@ export function createRouteLayer({
     [.33, .67].forEach(fraction => {
       const pose = routeArrowPose(latLngs, fraction); if (!pose) return;
       L.marker(pose.latLng, {
+        pane: 'selectedRouteMarkerPane',
         icon: L.divIcon({ className: 'route-direction-arrow-wrap selected-route-arrow', iconSize: [18, 18], iconAnchor: [9, 9], html: `<span class="route-direction-arrow is-highlighted" style="--bearing:${pose.bearing}deg">➤</span>` }),
         interactive: false,
         keyboard: false,
         zIndexOffset: 1500
       }).addTo(routeLayer);
     });
-    const photoCalloutOccupied = [];
     const renderedPhotoCallouts = new Set();
-    nodes.forEach((node, index) => {
+    const routePoints = nodes.map((node, index) => {
       const point = locations[index]; if (!point) return;
       const [lng, lat] = mapCoords(...point.split(',').map(Number));
       const place = state.locations.find(item => item.id === node.id) || node;
-      L.circleMarker([lat, lng], selectedPointStyle(place.type || 'drive', { radius: 8, weight: 2.5, interactive: false })).addTo(routeLayer);
+      L.circleMarker([lat, lng], selectedPointStyle(place.type || 'drive', { pane: 'selectedRoutePane', radius: 8, weight: 2.5, interactive: false })).addTo(routeLayer);
       const calloutKey = place.id || `${lat.toFixed(6)},${lng.toFixed(6)}`;
-      if (!renderedPhotoCallouts.has(calloutKey)) {
-        renderedPhotoCallouts.add(calloutKey);
-        addSelectedPlacePhotoCallout(routeLayer, [lat, lng], place, '', photoCalloutOccupied, latLngs);
-      }
+      if (renderedPhotoCallouts.has(calloutKey) || !place.photo) return;
+      renderedPhotoCallouts.add(calloutKey);
+      return { key: calloutKey, latLng: [lat, lng], place };
+    }).filter(Boolean);
+    // 路线预览的全部地点图片一起求解，避免逐张贪心放置在密集点位产生重叠。
+    const routePhotoPlacements = layoutPhotoCallouts(routePoints, latLngs);
+    routePoints.forEach(entry => addSelectedPlacePhotoCallout(
+      routeLayer, entry.latLng, entry.place, '', [], latLngs, false,
+      routePhotoPlacements.get(entry.key) || '', undefined, true
+    ));
+    const selectedPlaceIds = new Set(nodes.map(node => node?.id).filter(Boolean));
+    const selectedPhotoUrls = new Set(nodes.map(node => node?.photo).filter(Boolean).map(photo => new URL(photo, location.href).href));
+    const hideOverviewDuplicates = () => document.querySelectorAll('.map-place-photo-callout').forEach(callout => {
+      const samePhoto = selectedPhotoUrls.has(callout.querySelector('img')?.src || '');
+      if ((selectedPlaceIds.has(callout.dataset.placeId) || samePhoto) && !callout.classList.contains('is-preview-selected')) callout.classList.add('is-preview-source-hidden');
     });
+    hideOverviewDuplicates();
+    const duplicateObserver = new MutationObserver(hideOverviewDuplicates);
+    duplicateObserver.observe($('#map'), { childList: true, subtree: true });
+    setTimeout(() => { duplicateObserver.disconnect(); hideOverviewDuplicates(); }, 1800);
     setOverviewFocusOpacity(true);
-    fitSelectionWithDayContext(routeLayer.getBounds(), 13);
+    const selectedBounds = routeLayer.getBounds();
+    if (selectedBounds.isValid() && map.getSize()?.x > 0 && map.getSize()?.y > 0) {
+      const fitSelectedRoute = () => { map.invalidateSize(); map.fitBounds(selectedBounds, { padding: [48, 48], maxZoom: 13, animate: true }); };
+      requestAnimationFrame(fitSelectedRoute);
+      setTimeout(fitSelectedRoute, 180);
+      setTimeout(fitSelectedRoute, 520);
+    }
   }
 
   function removeRoute(routeId) {
@@ -129,7 +159,7 @@ export function createRouteLayer({
     const activeEvents = state.schedule.filter(event => !activeDate || event.date === activeDate);
     const placeTypes = [...new Set(activeEvents.flatMap(event => {
       if (event.type === 'drive') return [];
-      if (event.type === 'flight') return ['flight'];
+      if (event.transportInfo?.kind === 'flight' || event.flightInfo) return ['flight'];
       const place = state.locations.find(item => item.id === event.locationId);
       return [place?.type || event.type];
     }).filter(Boolean).map(mapDisplayType))];

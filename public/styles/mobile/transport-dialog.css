@@ -1,0 +1,55 @@
+/* Transport importer: compact required fields, optional details and inline validation. */
+html[data-preview-mode="mobile"] #flightImporter.transport-import-dialog {
+  height: fit-content !important;
+  min-height: 0 !important;
+  max-height: 92dvh !important;
+}
+
+html[data-preview-mode="mobile"] #flightImporter.transport-import-dialog .editor-form {
+  height: fit-content !important;
+  max-height: 92dvh !important;
+  gap: 10px !important;
+}
+
+html[data-preview-mode="mobile"] #flightImporter .transport-mode-field {
+  margin: 0 !important;
+  padding: 8px 11px !important;
+  border: 1px solid var(--ui-line) !important;
+  border-radius: var(--ui-radius-surface) !important;
+  background: #fff !important;
+}
+
+html[data-preview-mode="mobile"] #flightImporter .transport-mode-field select { margin-top: 6px !important; }
+
+html[data-preview-mode="mobile"] #flightImporter > .editor-form > .editor-grid,
+html[data-preview-mode="mobile"] #flightImporter .transport-extra-section .editor-grid {
+  grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  gap: var(--ui-space-2) !important;
+}
+
+html[data-preview-mode="mobile"] #flightImporter .transport-wide-field { grid-column: 1 / -1 !important; }
+html[data-preview-mode="mobile"] #flightImporter .transport-extra-section {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+}
+html[data-preview-mode="mobile"] #flightImporter .transport-extra-section[hidden] { display: none !important; }
+html[data-preview-mode="mobile"] #flightImporter .transport-extra-section .editor-grid { padding: 10px !important; }
+
+html[data-preview-mode="mobile"] #flightImporter > .editor-form > .hint {
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  border-radius: 10px !important;
+  background: var(--ui-green-soft) !important;
+  color: #315b49 !important;
+  line-height: 1.5 !important;
+}
+
+html[data-preview-mode="mobile"] #flightImporter .transport-import-status {
+  margin: 0 !important;
+  padding: 9px 11px !important;
+  border-radius: 10px !important;
+  font-size: var(--ui-meta) !important;
+  line-height: 1.4 !important;
+}
+
+html[data-preview-mode="mobile"] #flightImporter .editor-actions { margin-top: 0 !important; }

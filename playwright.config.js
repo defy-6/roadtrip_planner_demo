@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
+  testMatch: '**/*.spec.js',
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,
@@ -9,7 +10,6 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:3100',
     headless: true,
-    channel: 'chrome',
     viewport: { width: 1440, height: 900 },
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure'

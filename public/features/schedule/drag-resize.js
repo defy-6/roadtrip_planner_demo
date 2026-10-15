@@ -5,6 +5,10 @@ export function bindScheduleDragDrop({
   renderLocations, showDayOverview, setSelectionAnchor, suppressClick
 }) {
   let activeIndexes = [];
+  const visibleRange = () => ({
+    start: Number(schedule.dataset.startMinute) || 7 * 60,
+    end: Number(schedule.dataset.endMinute) || 23 * 60
+  });
   const clearVisuals = () => {
     document.querySelectorAll('.calendar-block.dragging').forEach(item => item.classList.remove('dragging'));
     document.querySelectorAll('.calendar-day.drop-target,.calendar-drop-preview').forEach(item => item.classList.remove('drop-target') || item.remove());
@@ -27,13 +31,13 @@ export function bindScheduleDragDrop({
     if (placeId) {
       event.dataTransfer.dropEffect = 'copy'; const place = state.locations.find(item => item.id === placeId), block = event.target.closest('.calendar-block');
       if (block) { preview.textContent = `关联：${place?.name || '地点'} → ${state.schedule[Number(block.dataset.scheduleIndex)]?.title || '事件'}`; Object.assign(preview.style, { top: block.style.top, height: block.style.height }); }
-      else { const raw = 420 + (event.clientY - day.getBoundingClientRect().top) / getHourHeight() * 60, start = Math.max(420, Math.min(1350, Math.round(raw / 5) * 5)); preview.textContent = `新建：${place?.name || '地点'} · ${minuteToClock(start)}–${minuteToClock(Math.min(1380, start + 60))}`; Object.assign(preview.style, { top: `${(start - 420) / 60 * getHourHeight()}px`, height: `${Math.max(22, getHourHeight() - 2)}px` }); }
+      else { const range = visibleRange(), raw = range.start + (event.clientY - day.getBoundingClientRect().top) / getHourHeight() * 60, start = Math.max(range.start, Math.min(range.end - 30, Math.round(raw / 5) * 5)); preview.textContent = `新建：${place?.name || '地点'} · ${minuteToClock(start)}–${minuteToClock(Math.min(range.end, start + 60))}`; Object.assign(preview.style, { top: `${(start - range.start) / 60 * getHourHeight()}px`, height: `${Math.max(22, getHourHeight() - 2)}px` }); }
       return;
     }
     event.dataTransfer.dropEffect = 'move'; const first = state.schedule[activeIndexes[0]]; if (!first) return;
-    const hourHeight = getHourHeight(), raw = 420 + (event.clientY - day.getBoundingClientRect().top) / hourHeight * 60, snapped = snapDrop(day.dataset.date, raw, activeIndexes);
-    const duration = Math.max(5, clockToMinute(first.end || first.start) - clockToMinute(first.start)), end = Math.min(1380, snapped + duration);
-    preview.textContent = `预计 ${minuteToClock(snapped)}–${minuteToClock(end)}${activeIndexes.length > 1 ? `（${activeIndexes.length} 项）` : ''}`; Object.assign(preview.style, { top: `${(snapped - 420) / 60 * hourHeight}px`, height: `${Math.max(22, duration / 60 * hourHeight - 2)}px` });
+    const hourHeight = getHourHeight(), range = visibleRange(), raw = range.start + (event.clientY - day.getBoundingClientRect().top) / hourHeight * 60, snapped = snapDrop(day.dataset.date, raw, activeIndexes);
+    const duration = Math.max(5, clockToMinute(first.end || first.start) - clockToMinute(first.start)), end = Math.min(range.end, snapped + duration);
+    preview.textContent = `预计 ${minuteToClock(snapped)}–${minuteToClock(end)}${activeIndexes.length > 1 ? `（${activeIndexes.length} 项）` : ''}`; Object.assign(preview.style, { top: `${(snapped - range.start) / 60 * hourHeight}px`, height: `${Math.max(22, duration / 60 * hourHeight - 2)}px` });
   };
   schedule.ondrop = event => {
     const day = event.target.closest('.calendar-day'); if (!day) return; event.preventDefault();
@@ -42,13 +46,13 @@ export function bindScheduleDragDrop({
       clearDraggingPlace(); clearVisuals(); const place = state.locations.find(item => item.id === placeId); if (!place) return;
       const block = event.target.closest('.calendar-block');
       if (block) { const entry = state.schedule[Number(block.dataset.scheduleIndex)]; placeDropController.chooseAction(entry, place).then(choice => { if (!placeDropController.apply(entry, place, choice)) return; save(); renderSchedule(); applyDayFilter(); renderLocations(); showDayOverview(); }); return; }
-      const raw = 420 + (event.clientY - day.getBoundingClientRect().top) / getHourHeight() * 60, start = Math.max(420, Math.min(1350, Math.round(raw / 5) * 5)), end = minuteToClock(Math.min(1380, start + 60));
+      const range = visibleRange(), raw = range.start + (event.clientY - day.getBoundingClientRect().top) / getHourHeight() * 60, start = Math.max(range.start, Math.min(range.end - 30, Math.round(raw / 5) * 5)), end = minuteToClock(Math.min(range.end, start + 60));
       placeDropController.confirmCreation(place, day.dataset.date, minuteToClock(start), end).then(confirmed => { if (!confirmed) return; state.schedule.push({ id: crypto.randomUUID(), date: day.dataset.date, start: minuteToClock(start), end, type: place.type === 'flight' ? 'transport' : (place.type === 'drive' ? 'spot' : place.type || 'spot'), title: place.name || '新建安排', detail: '', locationId: place.id }); save(); renderSchedule(); applyDayFilter(); renderLocations(); showDayOverview(); }); return;
     }
     let indexes = activeIndexes.length ? [...activeIndexes] : null; if (!indexes) { try { indexes = JSON.parse(event.dataTransfer.getData('text/plain')); } catch { indexes = [Number(event.dataTransfer.getData('text/plain'))]; } }
     indexes = indexes.map(Number).filter(index => state.schedule[index]); if (!indexes.length) return;
-    const raw = 420 + (event.clientY - day.getBoundingClientRect().top) / getHourHeight() * 60, nextStart = snapDrop(day.dataset.date, raw, indexes), requestedDelta = nextStart - clockToMinute(state.schedule[indexes[0]].start);
-    const groupStart = Math.min(...indexes.map(index => clockToMinute(state.schedule[index].start))), groupEnd = Math.max(...indexes.map(index => clockToMinute(state.schedule[index].end || state.schedule[index].start))), delta = Math.max(420 - groupStart, Math.min(1380 - groupEnd, requestedDelta));
+    const range = visibleRange(), raw = range.start + (event.clientY - day.getBoundingClientRect().top) / getHourHeight() * 60, nextStart = snapDrop(day.dataset.date, raw, indexes), requestedDelta = nextStart - clockToMinute(state.schedule[indexes[0]].start);
+    const groupStart = Math.min(...indexes.map(index => clockToMinute(state.schedule[index].start))), groupEnd = Math.max(...indexes.map(index => clockToMinute(state.schedule[index].end || state.schedule[index].start))), delta = Math.max(range.start - groupStart, Math.min(range.end - groupEnd, requestedDelta));
     indexes.forEach(index => { const entry = state.schedule[index], duration = Math.max(5, clockToMinute(entry.end || entry.start) - clockToMinute(entry.start)), shiftedStart = clockToMinute(entry.start) + delta; entry.date = day.dataset.date; entry.start = minuteToClock(shiftedStart); entry.end = minuteToClock(shiftedStart + duration); updateNode(index); });
     state.selectedIndex = indexes[0]; save(); renderSchedule(); applyDayFilter(); showDayOverview();
   };
@@ -69,6 +73,7 @@ export function bindScheduleTouchDrag({
   if (document.documentElement.dataset.previewMode !== 'mobile') return () => {};
   const LONG_PRESS_MS = 380;
   const MOVE_TOLERANCE = 14;
+  const DRAG_ACTIVATE_DIST = 28; // 长按后进入“真拖动”需达更大位移，充当“待拖确认”门槛
   let pointerId = null;
   let startX = 0;
   let startY = 0;
@@ -78,11 +83,15 @@ export function bindScheduleTouchDrag({
   let pressTimer = null;
   let lastMove = null;
   let startBlockIndex = -1;
+  const visibleRange = () => ({
+    start: Number(schedule.dataset.startMinute) || 7 * 60,
+    end: Number(schedule.dataset.endMinute) || 23 * 60
+  });
 
   const clear = () => {
     if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
     armed = false; dragging = false; pointerId = null; lastMove = null; activeIndexes = [];
-    document.querySelectorAll('.calendar-block.dragging').forEach(item => item.classList.remove('dragging'));
+    document.querySelectorAll('.calendar-block.dragging,.calendar-block.pending-drag').forEach(item => item.classList.remove('dragging', 'pending-drag'));
     document.querySelectorAll('.calendar-drop-preview').forEach(item => item.remove());
     schedule.classList.remove('schedule-touch-dragging');
   };
@@ -97,14 +106,15 @@ export function bindScheduleTouchDrag({
     const day = e.target.closest?.('.calendar-day') || document.elementFromPoint(e.clientX, e.clientY)?.closest('.calendar-day');
     if (!day) { lastMove = null; return; }
     const hourHeight = getHourHeight();
-    const raw = 420 + (e.clientY - day.getBoundingClientRect().top) / hourHeight * 60;
+    const range = visibleRange();
+    const raw = range.start + (e.clientY - day.getBoundingClientRect().top) / hourHeight * 60;
     const snapped = snapDrop(day.dataset.date, raw, activeIndexes);
     const first = state.schedule[activeIndexes[0]];
     const duration = Math.max(5, clockToMinute(first?.end || first?.start) - clockToMinute(first?.start));
-    const end = Math.min(1380, snapped + duration);
+    const end = Math.min(range.end, snapped + duration);
     const p = makePreview();
     p.textContent = `预计 ${minuteToClock(snapped)}–${minuteToClock(end)}${activeIndexes.length > 1 ? `（${activeIndexes.length} 项）` : ''}`;
-    Object.assign(p.style, { display: 'block', top: `${(snapped - 420) / 60 * hourHeight}px`, height: `${Math.max(22, duration / 60 * hourHeight - 2)}px` });
+    Object.assign(p.style, { display: 'block', top: `${(snapped - range.start) / 60 * hourHeight}px`, height: `${Math.max(22, duration / 60 * hourHeight - 2)}px` });
     lastMove = { dayEl: day, targetDate: day.dataset.date, targetY: e.clientY };
   };
 
@@ -117,9 +127,9 @@ export function bindScheduleTouchDrag({
       if (dist > MOVE_TOLERANCE) clear();
       return;
     }
-    // 长按后也需位移超过阈值才算真正拖动；否则(仅长按没移动)放行滚动/点击，
-    // 避免“想上下翻页却被长按触发、滚动被 preventDefault 卡住”的误触。
-    if (!dragging && dist < MOVE_TOLERANCE) return;
+    // 长按已成立（进入"待拖"态）。需位移超过更大门槛(DRAG_ACTIVATE_DIST)才算真拖动并接管滚动；
+    // 门槛内放行滚动/点击，避免多选/普通模式下手指略动但实为翻页时误判拖动。
+    if (dist < DRAG_ACTIVATE_DIST) return;
     dragging = true;
     schedule.classList.add('schedule-touch-dragging');
     e.preventDefault();
@@ -132,12 +142,13 @@ export function bindScheduleTouchDrag({
       const { dayEl: day, targetDate, targetY } = lastMove;
       const indexes = [...activeIndexes].map(Number).filter(index => state.schedule[index]);
       if (indexes.length) {
-        const raw = 420 + (targetY - day.getBoundingClientRect().top) / getHourHeight() * 60;
+        const range = visibleRange();
+        const raw = range.start + (targetY - day.getBoundingClientRect().top) / getHourHeight() * 60;
         const nextStart = snapDrop(targetDate, raw, indexes);
         const requestedDelta = nextStart - clockToMinute(state.schedule[indexes[0]].start);
         const groupStart = Math.min(...indexes.map(index => clockToMinute(state.schedule[index].start)));
         const groupEnd = Math.max(...indexes.map(index => clockToMinute(state.schedule[index].end || state.schedule[index].start)));
-        const delta = Math.max(420 - groupStart, Math.min(1380 - groupEnd, requestedDelta));
+        const delta = Math.max(range.start - groupStart, Math.min(range.end - groupEnd, requestedDelta));
         indexes.forEach(index => {
           const entry = state.schedule[index]; const duration = Math.max(5, clockToMinute(entry.end || entry.start) - clockToMinute(entry.start));
           const shiftedStart = clockToMinute(entry.start) + delta;
@@ -160,15 +171,22 @@ export function bindScheduleTouchDrag({
     pointerId = e.pointerId;
     startX = e.clientX; startY = e.clientY;
     startBlockIndex = Number(block.dataset.scheduleIndex);
+    // pointermove/up 需在 pointerdown 起就监听：这样才能在"位移超过阈值"的第一时间
+    // 撤销长按拖动资格——否则快速滑动的位移发生在长按计时窗内没有被追踪，
+    // 等长按触发后再监听第一次 move 就会误判为拖动。
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
     pressTimer = setTimeout(() => {
-      // 长按后，若该事件本身已选则移动整组；否则移动单个
-      activeIndexes = (selectedIndexes.has(startBlockIndex) ? [...selectedIndexes] : [startBlockIndex])
+      // 长按(期间未位移超阈值)后拖动：
+      // 多选模式 → 若长按的卡片已被选中则整组移动；普通模式 → 始终拖动单张卡片。
+      // 普通模式不看 selectedIndexes，避免"误点残留的选中态"导致翻页误判整组拖动。
+      const multiselect = document.body.classList.contains('mobile-multiselect');
+      activeIndexes = (multiselect && selectedIndexes.has(startBlockIndex) ? [...selectedIndexes] : [startBlockIndex])
         .sort((a, b) => clockToMinute(state.schedule[a]?.start) - clockToMinute(state.schedule[b]?.start) || a - b);
       armed = true;
+      block.classList.add('pending-drag');
       block.classList.add('dragging');
-      window.addEventListener('pointermove', onPointerMove);
-      window.addEventListener('pointerup', onPointerUp);
-      window.addEventListener('pointercancel', onPointerUp);
     }, LONG_PRESS_MS);
   });
 

@@ -1,0 +1,59 @@
+/* Shared four-view mobile navigation: one final floating geometry contract. */
+.mobile-tabbar { display: none; }
+
+html[data-preview-mode="mobile"] .mobile-tabbar {
+  position: fixed !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: max(12px, var(--mobile-safe-bottom, env(safe-area-inset-bottom))) !important;
+  z-index: 1500 !important;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  width: min(calc(100vw - 28px), calc(var(--mobile-canvas-max, 430px) - 28px)) !important;
+  height: 78px !important;
+  min-height: 0 !important;
+  padding: 7px !important;
+  border: 1px solid #ffffffd9 !important;
+  border-radius: 30px !important;
+  background: #fffffff0 !important;
+  box-shadow: 0 12px 32px #13251c26, inset 0 0 0 1px #dfe3df99 !important;
+  backdrop-filter: blur(24px) saturate(1.25) !important;
+  transform: translateX(-50%) !important;
+}
+
+html[data-preview-mode="mobile"] .mobile-tabbar a {
+  display: grid !important;
+  min-width: 0 !important;
+  height: 64px !important;
+  min-height: 64px !important;
+  place-items: center !important;
+  align-content: center !important;
+  gap: 3px !important;
+  padding: 5px 2px !important;
+  border-radius: 24px !important;
+  color: #111 !important;
+  font-size: var(--ui-label, .6875rem) !important;
+  font-weight: 650 !important;
+  line-height: 1.2 !important;
+  text-decoration: none !important;
+}
+
+html[data-preview-mode="mobile"] .mobile-tabbar a.is-active,
+html[data-preview-mode="mobile"] .mobile-tabbar a.active {
+  background: #eceeec !important;
+  box-shadow: inset 0 0 0 1px #e1e5e2 !important;
+  color: var(--mobile-green) !important;
+  font-weight: 800 !important;
+}
+
+html[data-preview-mode="mobile"] .mobile-tabbar a span {
+  display: grid !important;
+  width: 27px !important;
+  height: 27px !important;
+  place-items: center !important;
+  margin: 0 !important;
+  font-size: 24px !important;
+  line-height: 1 !important;
+}
+
+html[data-preview-mode="mobile"] .mobile-tabbar .mobile-undo-action { display: none !important; }

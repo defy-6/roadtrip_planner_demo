@@ -1,0 +1,28 @@
+/* Mobile shell only: viewport, shared page frame and functional view routing. */
+html[data-preview-mode="mobile"] { --mobile-paper: #fbfaf6; background: var(--mobile-paper); }
+html[data-preview-mode="mobile"] body { background: var(--mobile-paper); color: var(--mobile-ink); }
+html[data-preview-mode="mobile"] main {
+  height: 100dvh !important; min-height: 0 !important; padding: 0 var(--mobile-page-inline, 16px) 78px !important;
+  overflow: hidden !important; background: var(--mobile-paper) !important;
+}
+html[data-preview-mode="mobile"] .hero {
+  margin: 14px 0 0 !important; padding: 15px 16px !important; border: 1px solid #e2e5df !important;
+  border-radius: 14px !important; background: #fff !important; background-image: none !important;
+  color: var(--mobile-ink) !important; box-shadow: 0 5px 18px #173c320b !important;
+}
+html[data-preview-mode="mobile"] .hero #tripName { border: 0 !important; color: var(--mobile-ink) !important; font-size: 18px !important; font-weight: 700 !important; }
+html[data-preview-mode="mobile"] .hero p { margin: 3px 0 0 !important; color: var(--mobile-muted) !important; font-size: 12px !important; }
+html[data-preview-mode="mobile"] .hero .route-summary-btn { border: 0 !important; background: transparent !important; color: var(--mobile-green) !important; font-size: 12px !important; }
+html[data-preview-mode="mobile"] .content { margin: 14px 0 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; }
+
+html[data-preview-mode="mobile"] body[data-mobile-view] .schedule-panel,
+html[data-preview-mode="mobile"] body[data-mobile-view] .content,
+html[data-preview-mode="mobile"] body[data-mobile-view] .locations-panel,
+html[data-preview-mode="mobile"] body[data-mobile-view] .hero { display: none !important; }
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .schedule-panel { display: block !important; }
+html[data-preview-mode="mobile"] body[data-mobile-view="map"] .content { display: block !important; margin-top: 12px !important; }
+html[data-preview-mode="mobile"] body[data-mobile-view="plans"] .hero { display: none !important; }
+html[data-preview-mode="mobile"] body[data-mobile-view="map"] .content > aside { display: none !important; }
+html[data-preview-mode="mobile"], html[data-preview-mode="mobile"] body {
+  height: 100% !important; min-width: 320px; overflow: hidden !important;
+}

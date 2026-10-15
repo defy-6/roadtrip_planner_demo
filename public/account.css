@@ -1,24 +1,36 @@
-/* 账号 UI（朴素占位版）：视觉待设计稿落地后整体替换 */
-.account-dialog section { max-width: 460px; }
+/* Account dialog shares the same form, surface and state language as the
+   planner editors. Authentication stays compact; trip management uses the
+   full standard dialog width. */
+.account-dialog.is-account-auth { width: min(520px,calc(100vw - 28px)); }
+.account-dialog section { width: 100%; max-width: none; }
 .account-dialog h3 { margin: 0 0 12px; }
-.account-dialog label { display: grid; gap: 4px; margin: 10px 0; }
+.account-dialog .account-auth { display: grid; gap: 12px; }
+.account-dialog .account-auth h3 { margin: 0; padding-bottom: 10px; border-bottom: 1px solid #e2ebe4; color: #173c32; }
+.account-dialog label { display: grid; gap: 5px; margin: 0; color: #56665c; font-size: 12px; }
+.account-dialog input:not([type]),
 .account-dialog input[type='text'],
 .account-dialog input[type='password'] {
-  padding: 7px 10px; border: 1px solid #d6d9de; border-radius: 6px; font: inherit;
+  width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid #d8dfd9; border-radius: 8px; background: #fff; font: inherit;
 }
-.account-dialog .account-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.account-error { color: #c0392b; background: #fdecea; border: 1px solid #f5c6c0; border-radius: 6px; padding: 8px 10px; }
-.account-userline { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.account-dialog h4 { margin: 14px 0 6px; font-size: 13px; color: #5a6472; }
+.account-dialog input:focus { outline: 2px solid #d5e9dc; border-color: #5b9877; }
+.account-dialog .account-actions { display: grid; grid-template-columns: auto auto minmax(0,1fr); gap: 8px; margin-top: 2px; }
+.account-dialog .account-actions button { min-height: 40px; white-space: nowrap; }
+.account-error { color: var(--ui-status-error-text); background: var(--ui-status-error-bg); border: 1px solid var(--ui-status-error-border); border-radius: 6px; padding: 8px 10px; }
+.account-userline { display: flex; min-height: 44px; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; padding: 8px 10px; border: 1px solid #dbe7de; border-radius: 10px; background: #f7faf7; }
+.account-dialog h4 { margin: 14px 0 7px; font-size: 13px; color: #1c503d; }
 .account-trips ul { list-style: none; margin: 0; padding: 0; }
 .account-trip {
-  display: flex; justify-content: space-between; align-items: center; gap: 8px;
-  padding: 8px 10px; border: 1px solid #e3e6ea; border-radius: 8px; margin-bottom: 6px; cursor: pointer;
+  display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8px 12px;
+  padding: 10px 12px; border: 1px solid #dbe4de; border-radius: 10px; margin-bottom: 7px; background: #fff;
 }
-.account-trip:hover { border-color: #b9c4d1; background: #f7f9fb; }
+.account-trip:hover { border-color: #94b7a5; background: #f7faf7; }
 .account-trip b, .account-trip small { display: block; }
-.account-trip small { color: #8892a0; margin-top: 2px; }
-.account-trip-active { color: #2f73a9; font-size: 12px; white-space: nowrap; }
+.account-trip small { color: #718078; margin-top: 3px; }
+.account-trip-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.account-trip-actions button { min-height: 36px; }
+.account-trip-active { color: #075b43; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.account-trip-notice{grid-column:1/-1;margin:0;padding:9px 11px;border:1px solid var(--ui-status-success-border);border-radius:8px;background:var(--ui-status-success-bg);color:var(--ui-status-success-text);cursor:default;line-height:1.45}.account-trip-notice[hidden]{display:none}.account-trip-notice b{color:var(--ui-color-brand);font-size:12px}.account-trip-notice small{margin-top:2px;font-size:11px}
 .account-create { margin: 10px 0; }
-.account-create summary { cursor: pointer; color: #2f73a9; margin-bottom: 6px; }
+.account-create summary { min-height: 40px; display: flex; align-items: center; cursor: pointer; color: #075b43; margin-bottom: 6px; font-weight: 700; }
 .account-create label { display: grid; gap: 4px; margin: 6px 0; }
+.account-trip-management{grid-column:1/-1;display:grid;gap:8px;width:100%;margin-top:3px;padding:10px;border-top:1px solid #dbe7de;background:#f8faf7}.account-trip-management[hidden]{display:none}.account-member,.account-backup{display:grid;grid-template-columns:minmax(0,1fr) 112px 64px;gap:8px;align-items:center;min-height:40px}.account-backup{grid-template-columns:minmax(0,1fr) auto}.account-member span,.account-backup span{min-width:0}.account-member small,.account-backup small{display:block;color:#718078}.account-member select,.account-member button,.account-backup button{width:100%;height:40px;min-height:40px;margin:0}.account-member select{min-width:0;padding:0 24px 0 9px}.account-member button,.account-backup button{padding:0 10px}

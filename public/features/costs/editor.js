@@ -9,9 +9,8 @@ export function createCostEditor({ root, totalNode }) {
     if (!target) return;
     const line = document.createElement('div');
     line.className = 'editor-price-line';
-    line.style.cssText = 'display:grid;grid-template-columns:1fr 86px 1.5fr auto;gap:7px;margin:5px 0';
-    if (kind === 'person') line.innerHTML = '<input data-price-amount type="number" min="0" step="0.01" placeholder="单价（元）"><input data-price-people type="number" min="1" step="1" placeholder="人数"><input data-price-note placeholder="例如：学生票"><button type="button" class="danger" data-remove-price>×</button>';
-    else { line.style.gridTemplateColumns = '1fr 2fr auto'; line.innerHTML = '<input data-price-amount type="number" min="0" step="0.01" placeholder="金额（元）"><input data-price-note placeholder="例如：酒店两晚 / 晚餐"><button type="button" class="danger" data-remove-price>×</button>'; }
+    if (kind === 'person') line.innerHTML = '<input data-price-amount type="number" min="0" step="0.01" placeholder="单价" aria-label="单人费用单价（元）"><input data-price-people type="number" min="1" step="1" placeholder="人数" aria-label="单人费用人数"><input data-price-note placeholder="例如：学生票" aria-label="单人费用说明"><button type="button" class="danger" data-remove-price aria-label="删除单人费用">删除</button>';
+    else line.innerHTML = '<input data-price-amount type="number" min="0" step="0.01" placeholder="金额" aria-label="共同费用金额（元）"><input data-price-note placeholder="例如：酒店 / 晚餐" aria-label="共同费用说明"><button type="button" class="danger" data-remove-price aria-label="删除共同费用">删除</button>';
     line.dataset.priceKind = kind;
     line.querySelector('[data-price-amount]').value = item.amount ?? '';
     if (kind === 'person') line.querySelector('[data-price-people]').value = item.people ?? '';

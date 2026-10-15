@@ -28,28 +28,35 @@ export function findMatchingLocation(locations, address, name = '', resolvedLoca
 
 export function syncPlaceToUniversal(place, universalLocations = []) {
   if (!place) return place;
-  // 去重大字段：通用库只存轻量元数据，避免地点照片在计划内和通用库各存一份 base64
-  // （保存时全量 PUT，重复图片会翻倍撑爆腾讯云 5MB 网关限制，触发 413）。
-  // 网络图片 URL（高德 https://...）保留；dataURL base64 照片剥离，指向计划内同 id 地点即可，
-  // 载入时 mergeUniversalLocations 会用计划内完整地点（含 photo）回填。
+  // 通用库保存与计划内一致的地点元数据（含图片）。
+  // 图片同步策略（保守）：
+  //  - 通用库某地点若已有图（网络 URL 或 base64），保留通用库原图，不被计划内覆盖；
+  //  - 通用库某地点尚无图时，用计划内的图片补齐（这样「修改计划内地点图片」能补到通用库）。
+  // 网络 URL 原样保留；本地上传的 base64 也允许写入通用库（总量由 savePlannerData 防线兜底）。
   const stripped = { ...place };
-  if (typeof stripped.photo === 'string' && stripped.photo.startsWith('data:')) {
-    delete stripped.photo;
-    if (stripped.photoSource) delete stripped.photoSource;
-  }
   const existing = findMatchingLocation(universalLocations, place.address, place.name, place.resolved?.location);
-  if (existing) Object.assign(existing, structuredClone({ ...stripped, id: existing.id }));
-  else universalLocations.push(structuredClone(stripped));
+  if (existing) {
+    const keptPhoto = existing.photo || null;
+    Object.assign(existing, structuredClone({ ...stripped, id: existing.id }));
+    // 通用库原本有图则保留原图（避免把高德清晰 URL 覆盖成压缩 base64）；无图才用计划内图补齐。
+    if (keptPhoto) existing.photo = keptPhoto;
+  } else {
+    universalLocations.push(structuredClone(stripped));
+  }
   return place;
 }
 
 export function createPlaceTypeCatalog({ state, typeNames, markerColors, escapeHtml }) {
   const customCategories = () => (state.placeCategories || []).filter(category => category?.id && category?.name);
   const categoryMeta = type => customCategories().find(category => category.id === type);
-  const typeName = type => categoryMeta(type)?.name || typeNames[type] || '地点';
+  const typeName = type => categoryMeta(type)?.name || typeNames[mapDisplayType(type)] || '地点';
   const typeColor = type => normalizeCategoryColor(categoryMeta(type)?.color, markerColors[mapDisplayType(type)] || markerColors.spot);
   const optionsHtml = (includeDrive = false) => {
-    const defaults = Object.entries(typeNames).filter(([type]) => includeDrive || type !== 'drive');
+    const seen = new Set();
+    const defaults = Object.entries(typeNames).map(([type, label]) => {
+      const displayType = mapDisplayType(type);
+      return [displayType, typeNames[displayType] || label];
+    }).filter(([type]) => (includeDrive || type !== 'drive') && !seen.has(type) && seen.add(type));
     return [...defaults, ...customCategories().map(category => [category.id, category.name])].map(([type, label]) => `<option value="${escapeHtml(type)}">${escapeHtml(label)}</option>`).join('');
   };
   return { customCategories, categoryMeta, typeName, typeColor, optionsHtml };

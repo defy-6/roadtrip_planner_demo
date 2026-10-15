@@ -43,13 +43,80 @@ export function createPlannerMigrations({ typeForTitle, createId, readFlag, writ
     });
     return data;
   };
+  const migrateMergedPlaceTypes = data => {
+    if (data.placeCategoryVersion === 2) return data;
+    const normalize = place => {
+      if (!place) return place;
+      if (place.type === 'flight') return { ...place, type: 'transport' };
+      if (place.type === 'service' || place.type === 'fuel') return { ...place, type: 'supply' };
+      return place;
+    };
+    return {
+      ...data,
+      locations: (data.locations || []).map(normalize),
+      universalLocations: Array.isArray(data.universalLocations) ? data.universalLocations.map(normalize) : data.universalLocations,
+      placeCategoryVersion: 2
+    };
+  };
+  const migrateEventCategories = data => {
+    if (data.eventCategoryVersion === 1) return data;
+    const categoryFor = type => ({ service: 'supply', fuel: 'supply', flight: 'transport' }[type] || type || 'spot');
+    const normalize = event => event && typeof event === 'object' ? { ...event, category: categoryFor(event.type) } : event;
+    const versions = Object.fromEntries(Object.entries(data.versions || {}).map(([id, version]) => [id, {
+      ...version,
+      schedule: (version.schedule || []).map(normalize),
+      items: Array.isArray(version.items) ? version.items.map(normalize) : version.items
+    }]));
+    return {
+      ...data,
+      schedule: (data.schedule || []).map(normalize),
+      items: (data.items || []).map(normalize),
+      versions,
+      eventCategoryVersion: 1
+    };
+  };
+  const migrateScheduledTransport = data => {
+    if (data.schemaVersion >= 4) return data;
+    const normalize = event => {
+      if (!event || typeof event !== 'object') return event;
+      if (event.type === 'flight' || event.flightInfo) {
+        const legacy = event.flightInfo || {};
+        return {
+          ...event,
+          type: 'transport',
+          category: 'transport',
+          transportInfo: {
+            ...event.transportInfo,
+            kind: 'flight',
+            number: legacy.flightNumber || event.transportInfo?.number || '',
+            departureName: legacy.departureAirport || event.transportInfo?.departureName || '',
+            arrivalName: legacy.arrivalAirport || event.transportInfo?.arrivalName || '',
+            arrivalDate: legacy.arrivalDate || event.transportInfo?.arrivalDate || event.date,
+            ...legacy
+          }
+        };
+      }
+      if (event.type === 'transport' && event.transportInfo?.kind === 'train') {
+        return { ...event, category: 'transport', transportInfo: { ...event.transportInfo, number: event.transportInfo.number || event.transportInfo.trainNumber || '', departureName: event.transportInfo.departureName || event.transportInfo.departureStation || '', arrivalName: event.transportInfo.arrivalName || event.transportInfo.arrivalStation || '' } };
+      }
+      return event;
+    };
+    const normalizeVersion = version => ({ ...version, schedule: (version.schedule || []).map(normalize), items: Array.isArray(version.items) ? version.items.map(normalize) : version.items });
+    return {
+      ...data,
+      schedule: (data.schedule || []).map(normalize),
+      items: (data.items || []).map(normalize),
+      versions: Object.fromEntries(Object.entries(data.versions || {}).map(([id, version]) => [id, normalizeVersion(version)])),
+      schemaVersion: 4
+    };
+  };
   const clearInitialPendingAddresses = data => {
     if (readFlag(pendingAddressMigrationKey)) return data;
     writeFlag(pendingAddressMigrationKey);
     const clear = entry => ['hotel', 'food'].includes(entry.type) ? { ...entry, address: '' } : entry;
     return { ...data, items: (data.items || []).map(clear), schedule: (data.schedule || []).map(clear) };
   };
-  return [migrateToUnifiedItems, migrateLegacyLocations, migrateToPlaceModel, migrateExplicitRouteLinks, migrateFlightStopovers, clearInitialPendingAddresses];
+  return [migrateToUnifiedItems, migrateLegacyLocations, migrateToPlaceModel, migrateExplicitRouteLinks, migrateFlightStopovers, migrateMergedPlaceTypes, migrateEventCategories, migrateScheduledTransport, clearInitialPendingAddresses];
 }
 
 export function migratePlannerData(rawData, migrations = []) {

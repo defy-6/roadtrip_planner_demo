@@ -1,0 +1,83 @@
+/* Account and collaboration sheets: compact authentication, readable trip management. */
+html[data-preview-mode="mobile"] #accountDialog.is-account-auth {
+  height: fit-content !important;
+  min-height: 0 !important;
+  max-height: calc(100dvh - 20px) !important;
+}
+html[data-preview-mode="mobile"] #accountDialog.is-account-auth .editor-form {
+  height: fit-content !important;
+  padding-bottom: 0 !important;
+  overflow: visible !important;
+}
+html[data-preview-mode="mobile"] #accountDialog.is-account-auth .editor-actions {
+  position: static !important;
+  margin: 14px -14px 0 !important;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom)) !important;
+  border-top: 1px solid var(--ui-line) !important;
+}
+html[data-preview-mode="mobile"] #accountDialog.is-account-auth .account-actions {
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 8px;
+}
+html[data-preview-mode="mobile"] #accountDialog.is-account-auth .account-actions button {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding-inline: 8px;
+}
+html[data-preview-mode="mobile"] #accountDialog.is-account-auth #accSkip { grid-column: 1 / -1; }
+
+html[data-preview-mode="mobile"] #accountDialog .account-userline { min-height: 44px; }
+html[data-preview-mode="mobile"] #accountDialog .account-trip {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 7px !important;
+  padding: 10px !important;
+  border-color: var(--ui-line) !important;
+  border-radius: 10px !important;
+}
+html[data-preview-mode="mobile"] #accountDialog .account-trip-actions {
+  grid-column: 1 / -1 !important;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start !important;
+  gap: 6px;
+}
+html[data-preview-mode="mobile"] #accountDialog .account-trip-actions button {
+  min-height: 44px;
+  padding: 0 10px;
+}
+html[data-preview-mode="mobile"] #accountDialog .account-trip-management {
+  gap: 9px;
+  margin-top: 3px;
+  padding: 10px 0 0;
+  background: transparent;
+}
+html[data-preview-mode="mobile"] #accountDialog .account-trip-notice {
+  grid-column: 1 / -1 !important;
+  margin: 0 !important;
+  padding: 10px 11px !important;
+  border-radius: 10px !important;
+}
+html[data-preview-mode="mobile"] #accountDialog .account-trip > div:first-child { min-width: 0 !important; }
+html[data-preview-mode="mobile"] #accountDialog .account-trip > div:first-child b {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+html[data-preview-mode="mobile"] #accountDialog .account-member {
+  grid-template-columns: minmax(0,1fr) 96px 48px;
+  gap: 7px;
+}
+html[data-preview-mode="mobile"] #accountDialog .account-member select,
+html[data-preview-mode="mobile"] #accountDialog .account-member button {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 8px;
+  font-size: 14px !important;
+  line-height: 1.2;
+}
+html[data-preview-mode="mobile"] #accountDialog .account-member select { padding-right: 24px; }

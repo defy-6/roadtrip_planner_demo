@@ -9,6 +9,20 @@ export function createAccount({ api, storage }) {
     activeTripId: null,
   };
 
+  function emptyTripData(name = '我的计划') {
+    const planId = `plan-${crypto.randomUUID().slice(0, 8)}`;
+    const snapshot = {
+      name, items: [], schedule: [], expenses: [], locations: [], routes: [], placeCategories: [], preferences: {},
+      placeModelVersion: 1, routeLinkModeVersion: 1, planKey: planId,
+    };
+    return {
+      activeVersion: planId,
+      plans: [{ id: planId, name }],
+      versions: { [planId]: snapshot },
+      locations: [], routes: [], sharedSchedule: {},
+    };
+  }
+
   function getToken() {
     try { return storage.getItem(TOKEN_KEY); } catch { return null; }
   }
@@ -36,9 +50,13 @@ export function createAccount({ api, storage }) {
     if (!token) return null;
     api.setToken(token); // 同步 token 给 api（真实 api 从 storage 读取，此处为契约一致）
     try {
-      const { user } = await api.authMe();
+      // 用户信息与行程目录互不依赖，并行获取可省掉一次完整的云端往返。
+      const [{ user }, { trips }] = await Promise.all([api.authMe(), api.listTrips()]);
       state.user = user;
-      await refreshTrips();
+      const active = applyTrips(trips);
+      // 新注册账号或历史异常账号可能没有任何云端行程；立即创建空白容器，
+      // 避免编辑器回退到本地预设且后续保存因无 activeTripId 失败。
+      if (!active) await createTrip('我的行程');
       return user;
     } catch {
       persistToken(null);
@@ -48,8 +66,7 @@ export function createAccount({ api, storage }) {
     }
   }
 
-  async function refreshTrips() {
-    const { trips } = await api.listTrips();
+  function applyTrips(trips) {
     state.trips = trips;
     const remembered = getActiveTripId();
     const all = [...trips.mine, ...trips.shared];
@@ -58,11 +75,17 @@ export function createAccount({ api, storage }) {
     return match;
   }
 
+  async function refreshTrips() {
+    const { trips } = await api.listTrips();
+    return applyTrips(trips);
+  }
+
   async function login(username, password) {
     const { token, user } = await api.authLogin({ username, password });
     persistToken(token);
     state.user = user;
-    await refreshTrips();
+    const active = await refreshTrips();
+    if (!active) await createTrip('我的行程');
     return user;
   }
 
@@ -70,7 +93,8 @@ export function createAccount({ api, storage }) {
     const { token, user } = await api.authRegister({ username, password, nickname });
     persistToken(token);
     state.user = user;
-    await refreshTrips();
+    const active = await refreshTrips();
+    if (!active) await createTrip('我的行程');
     return user;
   }
 
@@ -82,7 +106,7 @@ export function createAccount({ api, storage }) {
   }
 
   async function createTrip(name, data) {
-    const { trip } = await api.createTrip({ name, data });
+    const { trip } = await api.createTrip({ name, data: data ?? emptyTripData(name || '我的计划') });
     await refreshTrips();
     persistActiveTrip(trip._id);
     return trip;

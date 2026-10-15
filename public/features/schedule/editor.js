@@ -1,12 +1,15 @@
 // 事件编辑器：打开/保存/删除时刻表事件，维护路线、航班、天气与费用字段。
 // 地点新增(confirmNewPlace)、费用表单(costEditor)、天气查询(queryEventWeather)均由 runtime 注入。
 import { localToday } from '../../core/utils.js';
+import { createScheduleEditorContext } from './editor-context.js';
+import { createTransportFields } from './transport-fields.js';
+import { createSearchPosition } from './search-position.js';
 export function createScheduleEditor({
-  state, $, escapeHtml, itemsEl, values,
+  state, $, escapeHtml, itemsEl, values, confirmAction, getContext = () => ({}),
   elements: { editorDeleteButton, routeEditorSection, flightFields, eventLocationField, weatherFields },
   costs: { renderEditorPriceItems, collectEditorPriceInfo },
   services: { geocode, weather: queryEventWeather, route: { resolveInlinePlace, calculateDriveRoute } },
-  routes: { upsertUniversalRoute, routeSignature, linkFlightAirports, normalizedTransportMode, normalizedTravelMode, transportModeMeta, driveTravelMeta, routeForScheduleEvent },
+  routes: { upsertUniversalRoute, routeSignature, linkFlightAirports, linkTrainStations, normalizedTransportMode, normalizedTravelMode, transportModeMeta, driveTravelMeta, routeForScheduleEvent },
   places: { confirmNewPlace, suggestedPlaceName, normalizePlaceLookup, findPlaceInPlanOrUniversal, placeTypeName, typeNames },
   persistence: { readSharedSchedule, parseStoredJson, versionStorageKey, sharedScheduleStorageKey, persistence, storePlanSnapshot, save },
   nodes: { updateNodeFromSchedule, addItem },
@@ -17,9 +20,39 @@ export function createScheduleEditor({
   let editingNewEvent = false;
   let pendingEditorRoute = null;
   let editorWaypointOrder = [];
+  let refreshRouteEndpointFields = () => {};
+  const isFlightEvent = entry => entry?.transportInfo?.kind === 'flight' || Boolean(entry?.flightInfo);
+  const transportFields = createTransportFields({ flightFields, dateFields: [$('#editorDate'), $('#editorStart'), $('#editorEnd')] });
+  const { clearStatus: clearTransportStatus, showError: showTransportError } = transportFields;
+  const editorContext = createScheduleEditorContext({
+    dialog: $('#eventEditor'), dateInput: $('#editorDate'), getContext,
+    arrivalDateInputs: [$('#editorFlightArrivalDate'), $('#editorTrainArrivalDate')],
+    getArrivalDate: () => {
+      if (!['flight', 'transport'].includes($('#editorType').value)) return '';
+      const kind = $('#editorTransportKind').value;
+      return (kind === 'flight' ? $('#editorFlightArrivalDate').value : kind === 'train' ? $('#editorTrainArrivalDate').value : '') || '';
+    }
+  });
+  const locationStatus = document.createElement('small');
+  locationStatus.id = 'editorLocationStatus';
+  locationStatus.className = 'editor-location-status';
+  locationStatus.setAttribute('role', 'status');
+  locationStatus.setAttribute('aria-live', 'polite');
+  locationStatus.hidden = true;
+  eventLocationField.append(locationStatus);
+  const clearLocationStatus = () => { locationStatus.hidden = true; locationStatus.textContent = ''; delete locationStatus.dataset.tone; };
+  const showLocationStatus = (message, tone = 'info', target = null) => {
+    locationStatus.textContent = message;
+    locationStatus.dataset.tone = tone;
+    locationStatus.hidden = false;
+    target?.focus();
+    locationStatus.scrollIntoView({ block: 'nearest' });
+  };
+  [$('#editorName'), $('#editorAddress'), $('#eventLocationSearch')].forEach(node => node?.addEventListener('input', clearLocationStatus));
 
   function updateEditorRouteQueryState(route) {
     const button = $('#resolveEditorRoute'), status = $('#editorRouteStatus'), record = route?.amap;
+    delete status.dataset.tone;
     if (!record?.queriedAt) {
       button.textContent = '获取高德路线';
       status.hidden = true; status.textContent = '';
@@ -33,16 +66,34 @@ export function createScheduleEditor({
     status.textContent = `现有高德结果：${modeLabel} · ${(Number(record.distance || 0) / 1000).toFixed(1)} 公里 · ${fmt(Number(record.duration || 0))}${tollText} · 查询于 ${new Date(record.queriedAt).toLocaleString('zh-CN')}${transportMode === 'driving' && record.queryPeriod === 'night' ? '（夜间结果，建议白天重查）' : ''}`;
   }
 
+  function showRouteError(error) {
+    const message = error?.message || '高德暂时无法生成这条路线。';
+    const status = $('#editorRouteStatus');
+    status.textContent = message;
+    status.dataset.tone = 'error';
+    status.hidden = false;
+    let target = $('#resolveEditorRoute');
+    if (message.includes('起点城市')) target = $('#routeTransitCity');
+    else if (message.includes('起点')) target = $('#routeOriginSearch').value.trim()
+      ? $('#routeOriginSearch')
+      : ($('#routeOriginName').value.trim() ? $('#routeOriginAddress') : $('#routeOriginName'));
+    else if (message.includes('终点')) target = $('#routeDestinationSearch').value.trim()
+      ? $('#routeDestinationSearch')
+      : ($('#routeDestinationName').value.trim() ? $('#routeDestinationAddress') : $('#routeDestinationName'));
+    target?.focus();
+    status.scrollIntoView({ block: 'nearest' });
+  }
+
   function updateEditorFieldVisibility() {
-    const type = $('#editorType').value, isDrive = type === 'drive', isFlight = type === 'flight', isNew = editingNewEvent === true;
+    const type = $('#editorType').value, isDrive = type === 'drive', isNew = editingNewEvent === true;
+    const { isFlight, isTrain } = transportFields.updateVisibility({ type, kind: $('#editorTransportKind').value });
     routeEditorSection.hidden = !isDrive;
     // 路线设置默认收起，避免每次打开驾驶事件都展开一大片起终点/途经点字段；
     // 仅在"新增驾驶事件"时自动展开一次(用户需填起终点)，编辑已有路线时保持折叠。
     if (isDrive && isNew) routeEditorSection.open = true;
-    flightFields.hidden = !isFlight;
-    eventLocationField.hidden = isDrive || isFlight;
+    eventLocationField.hidden = isDrive || isFlight || isTrain;
     weatherFields.hidden = false;
-    $("#editorAddress").closest("label").hidden = isFlight || isDrive;
+    $("#editorAddress").closest("label").hidden = isFlight || isTrain || isDrive;
     if (!isDrive) pendingEditorRoute = null;
   }
 
@@ -62,11 +113,18 @@ export function createScheduleEditor({
     const status = $('#editorWeatherStatus'), button = $('#queryEditorWeather');
     if (!entry) { status.hidden = true; return; }
     const text = entry.type === 'drive'
-      ? [entry.weather?.origin && `起点：${weatherSummary(entry.weather.origin)}`, entry.weather?.destination && `终点：${weatherSummary(entry.weather.destination)}`].filter(Boolean).join('；')
-      : entry.type === 'flight'
+      ? (entry.weather?.midpoint ? `路程中点：${weatherSummary(entry.weather.midpoint)}` : [entry.weather?.origin && `起点：${weatherSummary(entry.weather.origin)}`, entry.weather?.destination && `终点：${weatherSummary(entry.weather.destination)}`].filter(Boolean).join('；'))
+      : isFlightEvent(entry)
         ? [entry.weather?.origin && `起飞：${weatherSummary(entry.weather.origin)}`, entry.weather?.destination && `降落：${weatherSummary(entry.weather.destination)}`].filter(Boolean).join('；')
-      : (entry.weather?.placeId === entry.locationId ? weatherSummary(entry.weather) : '');
+      : entry.transportInfo?.kind === 'train'
+        ? [entry.weather?.origin && `出发：${weatherSummary(entry.weather.origin)}`, entry.weather?.destination && `到达：${weatherSummary(entry.weather.destination)}`].filter(Boolean).join('；')
+      : (entry.weather?.placeId === entry.locationId
+        ? (entry.weather?.origin || entry.weather?.destination
+          ? [entry.weather?.origin && `开始：${weatherSummary(entry.weather.origin)}`, entry.weather?.destination && `结束：${weatherSummary(entry.weather.destination)}`].filter(Boolean).join('；')
+          : weatherSummary(entry.weather))
+        : '');
     status.hidden = !text; status.textContent = text;
+    if (text) status.dataset.tone = 'success'; else delete status.dataset.tone;
     button.textContent = text ? '重新查询天气' : '查询天气';
   }
 
@@ -107,30 +165,53 @@ export function createScheduleEditor({
 
   function bindLocationSearch(inputId, selectId, places = state.locations, onPick = null) {
     const input = $(`#${inputId}`), select = $(`#${selectId}`); if (!input || !select) return;
-    const syncInput = () => { const place = places.find(item => item.id === select.value); input.value = place ? `${place.name || ''}${place.address ? ` · ${place.address}` : ''}` : ''; if (place) onPick?.(place); };
-    const matchPlace = query => {
-      if (!query) return null;
-      const q = query.toLowerCase();
-      // 包含(子串)匹配：输入部分名称/地址即可命中，无需逐字删空再重新输入
-      return places.find(item => {
-        const label = `${item.name || ''} · ${item.address || ''}`.toLowerCase();
-        return label === q || label.includes(q) || String(item.name || '').toLowerCase().includes(q) || String(item.address || '').toLowerCase().includes(q);
-      }) || null;
+    input.removeAttribute('list');
+    let panel = input.parentElement.querySelector(`.place-search-results[data-search-for="${inputId}"]`);
+    if (!panel) { panel = document.createElement('div'); panel.className = 'place-search-results'; panel.dataset.searchFor = inputId; panel.hidden = true; input.insertAdjacentElement('afterend', panel); }
+    input._placeSearchConfig = { places, select, onPick, panel };
+    panel._placeSearchPosition ||= createSearchPosition({ input, panel });
+    const allCandidates = () => {
+      const current = input._placeSearchConfig.places || [], ids = new Set(current.map(place => place.id));
+      return [...current.map(place => ({ place, source: '当前方案' })), ...(state.universalLocations || []).filter(place => !ids.has(place.id)).map(place => ({ place, source: '我的地点库' }))];
     };
-    // 点进输入框时若已有选中地点，全选文本便于直接覆盖为新的搜索词（无需逐字删除）。
-    input.addEventListener('focus', () => { if (select.value && input.value) { try { input.select(); } catch { /* 忽略 */ } } });
-    input.oninput = () => {
-      const query = input.value.trim(); if (!query) { select.value = ''; return; }
-      const place = matchPlace(query);
-      if (place) { select.value = place.id; onPick?.(place); }
+    const matches = query => {
+      const q = normalizePlaceLookup(query);
+      const scored = allCandidates().map(candidate => {
+        const name = normalizePlaceLookup(candidate.place.name), address = normalizePlaceLookup(candidate.place.address), label = `${name}${address}`;
+        const score = !q ? 1 : name === q ? 5 : name.startsWith(q) ? 4 : name.includes(q) ? 3 : address.includes(q) ? 2 : label.includes(q) ? 1 : 0;
+        return { ...candidate, score };
+      }).filter(candidate => candidate.score).sort((a, b) => b.score - a.score || String(a.place.name).localeCompare(String(b.place.name), 'zh-CN'));
+      return scored.slice(0, 30);
     };
-    input.onchange = () => {
-      const text = input.value.trim();
-      if (!text) { select.value = ''; return; }
-      const place = matchPlace(text);
-      if (place) { select.value = place.id; onPick?.(place); } else { select.value = ''; }
+    const fitPanel = panel._placeSearchPosition.fit;
+    const pick = candidate => {
+      let place = candidate.place;
+      if (candidate.source === '我的地点库') place = findPlaceInPlanOrUniversal(place.address, place.name, place.resolved?.location) || place;
+      if (![...select.options].some(option => option.value === place.id)) select.append(new Option(`${placeTypeName(place.type)} · ${place.name || '未命名地点'}`, place.id));
+      select.value = place.id; input.value = `${place.name || ''}${place.address ? ` · ${place.address}` : ''}`; panel.hidden = true; input._placeSearchConfig.onPick?.(place); input.blur(); refreshRouteEndpointFields();
     };
-    syncInput();
+    const renderResults = () => {
+      const results = matches(input.value.trim()); panel.replaceChildren(); fitPanel();
+      results.forEach(candidate => {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'place-search-result';
+        const title = document.createElement('b'); title.textContent = candidate.place.name || '未命名地点';
+        const meta = document.createElement('small'); meta.textContent = [placeTypeName(candidate.place.type), candidate.place.address || '地址待定位', candidate.source].join(' · ');
+        button.append(title, meta); button.onpointerdown = event => event.preventDefault(); button.onclick = () => pick(candidate); panel.append(button);
+      });
+      if (!results.length) { const empty = document.createElement('p'); empty.className = 'place-search-empty'; empty.textContent = input.value.trim() ? '没有匹配地点，可使用“新建地点并关联”。' : '地点库暂无可选地点。'; panel.append(empty); }
+      panel.hidden = false;
+      requestAnimationFrame(() => { if (!panel.hidden) fitPanel(); });
+    };
+    if (!input.dataset.customPlaceSearchBound) {
+      input.dataset.customPlaceSearchBound = 'true';
+      input.addEventListener('focus', () => { if (select.value && input.value) { try { input.select(); } catch { /* 忽略 */ } } renderResults(); });
+      input.addEventListener('input', () => { select.value = ''; renderResults(); refreshRouteEndpointFields(); });
+      input.addEventListener('keydown', event => { if (event.key === 'Escape') panel.hidden = true; if (event.key === 'ArrowDown') { event.preventDefault(); panel.querySelector('button')?.focus(); } });
+      input.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== input && !panel.contains(document.activeElement)) panel.hidden = true; }, 120));
+    }
+    const selectedPlace = places.find(item => item.id === select.value);
+    input.value = selectedPlace ? `${selectedPlace.name || ''}${selectedPlace.address ? ` · ${selectedPlace.address}` : ''}` : '';
+    if (selectedPlace) onPick?.(selectedPlace);
   }
 
   // 路线起终点二选一：用了地点库搜索(选定 place)就隐藏自定义起/终点，填了自定义就清回搜索。
@@ -141,9 +222,14 @@ export function createScheduleEditor({
     const originCustom = $('#routeCustomOriginField'), destCustom = $('#routeCustomDestinationField');
     const originNames = ['routeOriginName', 'routeOriginAddress'], destNames = ['routeDestinationName', 'routeDestinationAddress'];
     const refreshNow = () => {
+      const hasOriginCustom = originNames.some(id => $('#' + id)?.value.trim());
+      const hasDestinationCustom = destNames.some(id => $('#' + id)?.value.trim());
       if (originCustom) originCustom.hidden = Boolean(originSel?.value);
       if (destCustom) destCustom.hidden = Boolean(destSel?.value);
+      if (originSearch?.closest('label')) originSearch.closest('label').hidden = !originSel?.value && hasOriginCustom;
+      if (destSearch?.closest('label')) destSearch.closest('label').hidden = !destSel?.value && hasDestinationCustom;
     };
+    refreshRouteEndpointFields = refreshNow;
     if (!routeCustomBound && originSearch) {
       routeCustomBound = true;
       [originSearch, originSel, destSearch, destSel].forEach(el => {
@@ -159,7 +245,7 @@ export function createScheduleEditor({
   function openScheduleEditor(index, isNew = false) {
     if (isShareMode) return;
     const entry = state.schedule[index]; if (!entry) return;
-    editingScheduleIndex = index; editingNewEvent = isNew; pendingEditorRoute = null;
+    editingScheduleIndex = index; editingNewEvent = isNew; pendingEditorRoute = null; clearTransportStatus(); clearLocationStatus();
     $('#eventEditor').dataset.scheduleIndex = String(index);
     editorDeleteButton.hidden = isNew;
     const node = [...itemsEl.children].find(item => Number(item.dataset.scheduleIndex) === index);
@@ -180,11 +266,15 @@ export function createScheduleEditor({
     const flight = entry.flightInfo || {};
     $('#editorFlightNumber').value = flight.flightNumber || ''; $('#editorFlightArrivalDate').value = flight.arrivalDate || entry.date; $('#editorFlightDeparture').value = flight.departureAirport || ''; $('#editorFlightArrival').value = flight.arrivalAirport || ''; $('#editorFlightDepartureTerminal').value = flight.departureTerminal || ''; $('#editorFlightArrivalTerminal').value = flight.arrivalTerminal || '';
     $('#editorFlightStopoverAirport').value = flight.stopoverAirport || ''; $('#editorFlightStopoverArrivalTime').value = flight.stopoverArrivalTime || ''; $('#editorFlightStopoverDepartureTime').value = flight.stopoverDepartureTime || '';
+    const transport = entry.transportInfo || {};
+    $('#editorTransportKind').value = isFlightEvent(entry) ? 'flight' : transport.kind === 'train' ? 'train' : 'other';
+    $('#editorTrainNumber').value = transport.trainNumber || transport.number || ''; $('#editorTrainArrivalDate').value = transport.arrivalDate || entry.date; $('#editorTrainDeparture').value = transport.departureStation || transport.departureName || ''; $('#editorTrainArrival').value = transport.arrivalStation || transport.arrivalName || '';
     updateEditorFieldVisibility();
     updateRouteTransportModeUi();
     bindRouteCustomToggle(); // value 已设置后再刷新自定义起终点的显隐
     updateEditorRouteQueryState(sharedRoute);
     updateEditorWeatherState(entry);
+    editorContext.render();
     $('#eventEditor').showModal();
     // 避免浏览器/iOS 把焦点默认交给 dialog 内第一个可聚焦控件（#editorDate，type=date，
     // 会立即弹日期滚轮 + 放大页面）。dialog 已加 tabindex="-1" 使其真正可聚焦。
@@ -192,7 +282,11 @@ export function createScheduleEditor({
     // 强制把焦点从 date 输入上移开（用户点哪个字段才弹哪个）。
     const moveFocusAway = () => {
       try {
-        $('#eventEditor').focus({ preventScroll: true });
+        const dialog = $('#eventEditor');
+        if (!dialog.open) return;
+        const active = document.activeElement;
+        if (active !== $('#editorDate') && dialog.contains(active) && active?.matches('input,textarea,select,button')) return;
+        dialog.focus({ preventScroll: true });
         if (document.activeElement?.type === 'date') $('#eventEditor').blur();
       } catch { /* focus 异常忽略 */ }
     };
@@ -222,9 +316,16 @@ export function createScheduleEditor({
     storePlanSnapshot(versionKey, snapshot);
   }
 
-  function deleteScheduleEvent(index) {
+  async function deleteScheduleEvent(index) {
     if (isShareMode) return;
-    const event = state.schedule[index]; if (!event || !confirm(`确定删除“${event.title}”吗？\n\n关联的通用地点和通用路线会保留。`)) return;
+    const event = state.schedule[index]; if (!event) return;
+    const confirmed = await confirmAction({
+      title: '删除事件',
+      message: `确定删除“${event.title || '未命名事件'}”吗？`,
+      detail: '关联的通用地点和通用路线会继续保留，此操作无法撤销。',
+      confirmLabel: '删除事件'
+    });
+    if (!confirmed) return;
     if (event.sharedId && !state.plans.length) {
       const shared = readSharedSchedule(); delete shared[event.sharedId];
       persistence.write(sharedScheduleStorageKey, shared);
@@ -246,7 +347,8 @@ export function createScheduleEditor({
   $('#editorCancel').onclick = cancelScheduleEditor;
   editorDeleteButton.onclick = () => deleteScheduleEvent(editingScheduleIndex);
   $('#eventEditor').oncancel = event => { event.preventDefault(); cancelScheduleEditor(); };
-  $('#editorType').onchange = () => { updateEditorFieldVisibility(); updateRouteTransportModeUi(); bindRouteCustomToggle(); };
+  $('#editorType').onchange = () => { updateEditorFieldVisibility(); updateRouteTransportModeUi(); bindRouteCustomToggle(); editorContext.render(); };
+  $('#editorTransportKind').onchange = () => { clearTransportStatus(); updateEditorFieldVisibility(); editorContext.render(); };
   $('#routeTransportMode').onchange = updateRouteTransportModeUi;
   $('#queryEditorWeather').onclick = () => queryEventWeather(editingScheduleIndex);
   $('#routeLibrarySelect').onchange = event => {
@@ -260,6 +362,7 @@ export function createScheduleEditor({
     editorWaypointOrder = [...(route.viaPlaceIds || [])];
     [...$('#routeWaypoints').options].forEach(option => { option.selected = editorWaypointOrder.includes(option.value); }); renderWaypointOrder();
     updateRouteTransportModeUi();
+    bindRouteCustomToggle();
     updateEditorRouteQueryState(route);
   };
   // 新建地点并关联：打开地点编辑器建新地点，保存后把当前事件切到该新地点。
@@ -278,16 +381,16 @@ export function createScheduleEditor({
         $('#editorName').value = place.name || $('#editorName').value;
         $('#editorAddress').value = place.address || '';
         save(); renderLocations(); renderSchedule(state.schedule); updateNodeFromSchedule(index); focusScheduleEvent(index);
+        showLocationStatus(`已关联地点：${place.name || '未命名地点'}。`, 'success');
       }
     } catch (error) {
-      // eslint-disable-next-line no-alert
-      window.alert(error.message || '新建地点失败，请重试。');
+      showLocationStatus(error.message || '新建地点失败，请重试。', 'error', $('#editorName'));
     } finally { button.disabled = false; button.textContent = '新建地点并关联'; }
   };
   $('#resolveEditorPlace').onclick = async event => {
     const index = editingScheduleIndex, entry = state.schedule[index]; if (!entry || ['drive', 'flight'].includes($('#editorType').value)) return;
     const name = $('#editorName').value.trim(), address = $('#editorAddress').value.trim();
-    if (!name || !address) { alert('请先填写活动 / 地点名称和地点地址。'); return; }
+    if (!name || !address) { showLocationStatus('请先填写活动 / 地点名称和地点地址。', 'error', !name ? $('#editorName') : $('#editorAddress')); return; }
     const button = event.currentTarget; button.disabled = true; button.textContent = '正在查询高德位置…';
     try {
       let place = state.locations.find(item => item.id === $('#eventLocation').value);
@@ -307,7 +410,8 @@ export function createScheduleEditor({
       if (![...$('#eventLocation').options].some(option => option.value === place.id)) $('#eventLocation').append(new Option(`${placeTypeName(place.type)} · ${place.name}`, place.id));
       $('#eventLocation').value = place.id; save(); renderLocations(); renderSchedule(state.schedule); updateNodeFromSchedule(index); focusScheduleEvent(index);
       button.textContent = '已关联高德位置';
-    } catch (error) { alert(error.message || '高德暂时无法查询这个地点。'); button.textContent = '重新查询高德位置'; }
+      showLocationStatus(`已关联高德位置：${place.name || name}。`, 'success');
+    } catch (error) { showLocationStatus(error.message || '高德暂时无法查询这个地点。', 'error', $('#editorAddress')); button.textContent = '重新查询高德位置'; }
     finally { button.disabled = false; }
   };
   $('#resolveEditorRoute').onclick = async event => {
@@ -331,6 +435,11 @@ export function createScheduleEditor({
         if (![...select.options].some(option => option.value === place.id)) select.append(new Option(`${placeTypeName(place.type)} · ${place.name}`, place.id));
         select.value = place.id;
       });
+      // 自定义端点已解析并加入地点库后，只保留地点关联，避免下次打开时重复显示旧自定义值。
+      $('#routeOriginName').value = ''; $('#routeOriginAddress').value = '';
+      $('#routeDestinationName').value = ''; $('#routeDestinationAddress').value = '';
+      bindLocationSearch('routeOriginSearch', 'routeOrigin'); bindLocationSearch('routeDestinationSearch', 'routeDestination');
+      refreshRouteEndpointFields();
       const transportMode = normalizedTransportMode($('#routeTransportMode').value);
       const viaPlaceIds = transportMode === 'driving' ? [...editorWaypointOrder] : [];
       const transit = transportMode === 'transit' ? { city: $('#routeTransitCity').value.trim(), cityd: $('#routeTransitCityd').value.trim() } : undefined;
@@ -345,22 +454,23 @@ export function createScheduleEditor({
       pendingEditorRoute = { links, name: routeName, amap: path.amap };
       updateEditorRouteQueryState({ amap: path.amap });
       $('#editorRouteStatus').textContent += ' · 预览结果，点击“保存更新”后才会覆盖';
-    } catch (error) { alert(error.message || '高德暂时无法生成这条路线。'); button.textContent = '重新获取高德路线'; }
+    } catch (error) { showRouteError(error); button.textContent = '重新获取高德路线'; }
     finally { button.disabled = false; }
   };
   $('#editorForm').onsubmit = async event => {
     event.preventDefault(); const index = editingScheduleIndex; if (!Number.isInteger(index) || !state.schedule[index]) return;
-    const type = $('#editorType').value; const transportMode = normalizedTransportMode($('#routeTransportMode').value); let routeLinks = type === 'drive' ? { originPlaceId: $('#routeOrigin').value || undefined, destinationPlaceId: $('#routeDestination').value || undefined, customOrigin: $('#routeOriginAddress').value.trim() ? { name: $('#routeOriginName').value.trim() || '自定义起点', address: $('#routeOriginAddress').value.trim() } : undefined, customDestination: $('#routeDestinationAddress').value.trim() ? { name: $('#routeDestinationName').value.trim() || '自定义终点', address: $('#routeDestinationAddress').value.trim() } : undefined, viaPlaceIds: transportMode === 'driving' ? [...editorWaypointOrder] : [], transportMode, travelMode: normalizedTravelMode($('#routeTravelMode').value), transit: transportMode === 'transit' ? { city: $('#routeTransitCity').value.trim(), cityd: $('#routeTransitCityd').value.trim() } : undefined } : undefined;
+    const type = $('#editorType').value; const transportMode = normalizedTransportMode($('#routeTransportMode').value); const originPlaceId = $('#routeOrigin').value || undefined; const destinationPlaceId = $('#routeDestination').value || undefined; let routeLinks = type === 'drive' ? { originPlaceId, destinationPlaceId, customOrigin: !originPlaceId && $('#routeOriginAddress').value.trim() ? { name: $('#routeOriginName').value.trim() || '自定义起点', address: $('#routeOriginAddress').value.trim() } : undefined, customDestination: !destinationPlaceId && $('#routeDestinationAddress').value.trim() ? { name: $('#routeDestinationName').value.trim() || '自定义终点', address: $('#routeDestinationAddress').value.trim() } : undefined, viaPlaceIds: transportMode === 'driving' ? [...editorWaypointOrder] : [], transportMode, travelMode: normalizedTravelMode($('#routeTravelMode').value), transit: transportMode === 'transit' ? { city: $('#routeTransitCity').value.trim(), cityd: $('#routeTransitCityd').value.trim() } : undefined } : undefined;
     let title = $('#editorName').value.trim(); const address = $('#editorAddress').value.trim();
-    let locationId = type === 'drive' || type === 'flight' ? undefined : ($('#eventLocation').value || undefined);
-    if (type !== 'drive' && type !== 'flight' && address) {
+    const transportKind = type === 'transport' ? $('#editorTransportKind').value : '', editingFlight = transportKind === 'flight', editingTrain = transportKind === 'train', fixedTransport = editingFlight || editingTrain;
+    let locationId = type === 'drive' || fixedTransport ? undefined : ($('#eventLocation').value || undefined);
+    if (type !== 'drive' && !fixedTransport && address) {
       let place = state.locations.find(item => item.id === locationId);
       if (!place) {
         place = findPlaceInPlanOrUniversal(address, title);
         if (!place) {
           let point;
           try { point = await geocode(address, title); }
-          catch (error) { alert(error.message || '高德暂时无法确认该地点，请检查地址后重试。'); return; }
+          catch (error) { showLocationStatus(error.message || '高德暂时无法确认该地点，请检查地址后重试。', 'error', $('#editorAddress')); return; }
           place = findPlaceInPlanOrUniversal(address, title, point.location);
           if (!place) place = await confirmNewPlace({ type, name: suggestedPlaceName(address, point.name, title || address), address, note: $('#editorNote').value.trim(), fromEvent: true });
           if (!place) return;
@@ -370,7 +480,7 @@ export function createScheduleEditor({
       if (place.address !== address || !place.resolved) {
         place.address = address; delete place.resolved;
         try { const point = await geocode(place.address, place.name); place.resolved = { name: point.name || place.name, address: point.formatted_address || place.address, location: point.location }; }
-        catch (error) { alert(error.message || '高德暂时无法确认该地点，请检查地址后重试。'); return; }
+        catch (error) { showLocationStatus(error.message || '高德暂时无法确认该地点，请检查地址后重试。', 'error', $('#editorAddress')); return; }
       }
       if (normalizePlaceLookup(place.name) === normalizePlaceLookup(title)) place.name = suggestedPlaceName(address, place.resolved?.name, place.name);
     }
@@ -379,13 +489,31 @@ export function createScheduleEditor({
       if (pendingEditorRoute && routeSignature(pendingEditorRoute.links) === routeSignature(routeLinks)) route.amap = { ...pendingEditorRoute.amap };
       routeLinks = { ...routeLinks, routeId: route.id };
     }
-    const flightInfo = type === 'flight' ? { flightNumber: $('#editorFlightNumber').value.trim().toUpperCase(), departureAirport: $('#editorFlightDeparture').value.trim(), arrivalAirport: $('#editorFlightArrival').value.trim(), departureTerminal: $('#editorFlightDepartureTerminal').value.trim(), arrivalTerminal: $('#editorFlightArrivalTerminal').value.trim(), arrivalDate: $('#editorFlightArrivalDate').value || $('#editorDate').value, stopoverAirport: $('#editorFlightStopoverAirport').value.trim(), stopoverArrivalTime: $('#editorFlightStopoverArrivalTime').value, stopoverDepartureTime: $('#editorFlightStopoverDepartureTime').value, source: 'manual' } : undefined;
-    if (flightInfo?.stopoverAirport && (!flightInfo.stopoverArrivalTime || !flightInfo.stopoverDepartureTime)) { alert('填写经停机场后，请同时填写经停到达和再次起飞时间。'); return; }
-    if (flightInfo && (flightInfo.arrivalDate < $('#editorDate').value || (flightInfo.arrivalDate === $('#editorDate').value && clockToMinute($('#editorEnd').value) <= clockToMinute($('#editorStart').value)))) { alert('航班到达日期和时间必须晚于起飞日期和时间。'); return; }
+    const flightInfo = editingFlight ? { flightNumber: $('#editorFlightNumber').value.trim().toUpperCase(), departureAirport: $('#editorFlightDeparture').value.trim(), arrivalAirport: $('#editorFlightArrival').value.trim(), departureTerminal: $('#editorFlightDepartureTerminal').value.trim(), arrivalTerminal: $('#editorFlightArrivalTerminal').value.trim(), arrivalDate: $('#editorFlightArrivalDate').value || $('#editorDate').value, stopoverAirport: $('#editorFlightStopoverAirport').value.trim(), stopoverArrivalTime: $('#editorFlightStopoverArrivalTime').value, stopoverDepartureTime: $('#editorFlightStopoverDepartureTime').value, source: 'manual' } : undefined;
+    if (flightInfo?.stopoverAirport && (!flightInfo.stopoverArrivalTime || !flightInfo.stopoverDepartureTime)) {
+      showTransportError('填写经停机场后，请同时填写经停到达和再次起飞时间。', !flightInfo.stopoverArrivalTime ? $('#editorFlightStopoverArrivalTime') : $('#editorFlightStopoverDepartureTime'));
+      return;
+    }
+    if (flightInfo && (flightInfo.arrivalDate < $('#editorDate').value || (flightInfo.arrivalDate === $('#editorDate').value && clockToMinute($('#editorEnd').value) <= clockToMinute($('#editorStart').value)))) {
+      showTransportError('航班到达日期和时间必须晚于起飞日期和时间。', flightInfo.arrivalDate < $('#editorDate').value ? $('#editorFlightArrivalDate') : $('#editorEnd'));
+      return;
+    }
     if (flightInfo?.flightNumber && flightInfo.departureAirport && flightInfo.arrivalAirport) title = `${flightInfo.flightNumber} ${flightInfo.departureAirport} → ${flightInfo.arrivalAirport}`;
+    const trainNumber = $('#editorTrainNumber').value.trim().toUpperCase(), trainDeparture = $('#editorTrainDeparture').value.trim(), trainArrival = $('#editorTrainArrival').value.trim(), trainArrivalDate = $('#editorTrainArrivalDate').value || $('#editorDate').value;
+    if (editingTrain && (!trainNumber || !trainDeparture || !trainArrival)) {
+      showTransportError('动车信息请填写车次、出发站和到达站。', !trainNumber ? $('#editorTrainNumber') : !trainDeparture ? $('#editorTrainDeparture') : $('#editorTrainArrival'));
+      return;
+    }
+    if (editingTrain && (trainArrivalDate < $('#editorDate').value || (trainArrivalDate === $('#editorDate').value && clockToMinute($('#editorEnd').value) <= clockToMinute($('#editorStart').value)))) {
+      showTransportError('动车到站日期和时间必须晚于发车日期和时间。', trainArrivalDate < $('#editorDate').value ? $('#editorTrainArrivalDate') : $('#editorEnd'));
+      return;
+    }
+    if (editingTrain) title = `${trainNumber} ${trainDeparture} → ${trainArrival}`;
     const priceInfo = collectEditorPriceInfo();
-    const updated = { ...state.schedule[index], date: $('#editorDate').value, start: $('#editorStart').value, end: $('#editorEnd').value, title, detail: $('#editorNote').value, address: '', type, locationId, routeLinks, flightInfo, priceInfo };
-    if (type === 'flight') { try { await linkFlightAirports(updated); } catch (error) { alert(error.message || '暂时无法确认机场位置，请检查机场名称后重试。'); return; } }
+    const transportInfo = type !== 'transport' ? undefined : editingFlight ? { ...state.schedule[index].transportInfo, kind: 'flight', number: flightInfo.flightNumber, departureName: flightInfo.departureAirport, arrivalName: flightInfo.arrivalAirport, arrivalDate: flightInfo.arrivalDate } : editingTrain ? { ...state.schedule[index].transportInfo, kind: 'train', number: trainNumber, trainNumber, departureName: trainDeparture, departureStation: trainDeparture, arrivalName: trainArrival, arrivalStation: trainArrival, arrivalDate: trainArrivalDate, source: state.schedule[index].transportInfo?.source || 'manual' } : { kind: 'other', source: 'manual' };
+    const updated = { ...state.schedule[index], date: $('#editorDate').value, start: $('#editorStart').value, end: $('#editorEnd').value, title, detail: $('#editorNote').value, address: '', type, locationId, routeLinks, flightInfo, transportInfo, priceInfo };
+    if (editingFlight) { try { await linkFlightAirports(updated); } catch (error) { showTransportError(error.message || '暂时无法确认机场位置，请检查机场名称后重试。', $('#editorFlightDeparture')); return; } }
+    if (editingTrain) { try { await linkTrainStations(updated); } catch (error) { showTransportError(error.message || '暂时无法确认车站位置，请检查车站名称后重试。', $('#editorTrainDeparture')); return; } }
     state.schedule[index] = updated;
     const node = [...itemsEl.children].find(item => Number(item.dataset.scheduleIndex) === index);
     if (node) updateNodeFromSchedule(index);

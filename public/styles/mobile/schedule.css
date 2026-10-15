@@ -1,15 +1,267 @@
-@media(max-width:980px){
+@media all{
 html[data-preview-mode="mobile"] .mobile-date-strip{display:grid;gap:8px;padding:8px 0 10px;border-bottom:1px solid var(--mobile-line)}
 html[data-preview-mode="mobile"] .mobile-calendar-head{display:grid;align-items:center}html[data-preview-mode="mobile"] .mobile-calendar-head b{text-align:center;font-size:12px}
 html[data-preview-mode="mobile"] .mobile-weekdays{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;scroll-snap-type:x proximity;scrollbar-width:none}html[data-preview-mode="mobile"] .mobile-weekdays button{flex:0 0 44px;height:54px;padding:5px 0;border:0;border-radius:999px;background:transparent;color:#4d5651;scroll-snap-align:center}html[data-preview-mode="mobile"] .mobile-weekdays small,html[data-preview-mode="mobile"] .mobile-weekdays b{display:block}html[data-preview-mode="mobile"] .mobile-weekdays small{font-size:10px}html[data-preview-mode="mobile"] .mobile-weekdays b{margin-top:5px;font-size:14px}html[data-preview-mode="mobile"] .mobile-weekdays button.is-selected{background:var(--mobile-green);color:#fff}
-html[data-preview-mode="mobile"] .mobile-view-switch{justify-self:end;display:grid;grid-template-columns:1fr 1fr;width:142px;padding:3px;border-radius:10px;background:#eff0ec}html[data-preview-mode="mobile"] .mobile-view-switch button{height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:#59615d;font-size:12px}html[data-preview-mode="mobile"] .mobile-view-switch button.is-selected{background:var(--mobile-green);color:#fff}
-html[data-preview-mode="mobile"] .calendar-grid{--calendar-height:640px!important}html[data-preview-mode="mobile"] .time-rail,html[data-preview-mode="mobile"] .calendar-day{height:640px!important}html[data-preview-mode="mobile"] .time-label{height:40px!important}html[data-preview-mode="mobile"] .calendar-day{background-image:repeating-linear-gradient(to bottom,transparent 0,transparent 39px,var(--mobile-line) 40px)!important}
+html[data-preview-mode="mobile"] .time-rail,html[data-preview-mode="mobile"] .calendar-day{height:var(--calendar-height)!important}html[data-preview-mode="mobile"] .time-label{height:var(--hour-height)!important}html[data-preview-mode="mobile"] .calendar-day{background-image:repeating-linear-gradient(to bottom,transparent 0,transparent calc(var(--hour-height) - 1px),var(--mobile-line) var(--hour-height))!important}
+html[data-preview-mode="mobile"] .calendar-grid{grid-template-columns:54px repeat(var(--days),calc(min(100vw,var(--mobile-canvas-max,430px)) - 86px))!important}
+html[data-preview-mode="mobile"] .calendar-grid{grid-template-rows:38px auto!important}
+html[data-preview-mode="mobile"] .calendar-corner,html[data-preview-mode="mobile"] .calendar-head{box-sizing:border-box!important;height:38px!important;border-bottom:1px solid var(--mobile-line)!important}html[data-preview-mode="mobile"] .calendar-head{display:flex!important;align-items:center!important;gap:6px!important;white-space:nowrap!important}html[data-preview-mode="mobile"] .calendar-head b,html[data-preview-mode="mobile"] .calendar-head small{display:inline!important;margin:0!important}
+html[data-preview-mode="mobile"] .schedule-panel{position:relative!important}html[data-preview-mode="mobile"] .schedule-panel.mobile-list-view .mobile-select-toggle-row{display:none!important}
 html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .schedule-scroll{padding-bottom:126px!important;scroll-padding-bottom:126px!important}html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] #addScheduleBtn{bottom:88px!important}
+/* 时间表顶部沿用原版两行结构：日期与视图同排，日期工具独占第二行。 */
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-date-strip{
+  grid-template-columns:minmax(0,1fr) 124px!important;
+  grid-template-rows:44px 40px!important;
+  gap:6px 8px!important;
+  padding:6px 0!important;
 }
-@media(max-width:980px){
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-weekdays{
+  grid-column:1!important;
+  grid-row:1!important;
+  width:100%!important;
+  gap:2px!important;
+  padding:0!important;
+}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-weekdays button{
+  flex:0 0 38px!important;
+  width:38px!important;
+  height:44px!important;
+  padding:2px 0!important;
+  border:0!important;
+  border-radius:999px!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-weekdays button.is-selected{
+  background:var(--mobile-green)!important;
+  color:#fff!important;
+}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .calendar-grid{
+  grid-template-rows:0 auto!important;
+}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] :is(.calendar-corner,.calendar-head){
+  display:none!important;
+  height:0!important;
+}
+
+}
+@media all{
 html[data-preview-mode="mobile"] .mobile-date-strip{grid-template-columns:minmax(0,1fr) 118px!important;gap:7px!important;padding:5px 0 7px!important}
 html[data-preview-mode="mobile"] .mobile-calendar-head{display:none!important}
 html[data-preview-mode="mobile"] .mobile-weekdays{gap:3px!important;padding:0!important}
 html[data-preview-mode="mobile"] .mobile-weekdays button{flex-basis:39px!important;height:44px!important;padding:3px 0!important}
-html[data-preview-mode="mobile"] .mobile-view-switch{align-self:center!important;width:118px!important}
 }
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .schedule-feedback{
+  margin:8px 0 0!important;
+  padding:9px 11px!important;
+  border-radius:10px!important;
+  font-size:11px!important;
+  line-height:1.45!important;
+}
+
+/* Compact list/timeline switch: one final geometry contract. */
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-view-switch {
+  box-sizing: border-box !important;
+  display: grid;
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  grid-template-columns: 1fr 1fr;
+  align-self: center !important;
+  justify-self: end !important;
+  width: 124px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  margin: 0 !important;
+  padding: 2px !important;
+  overflow: hidden !important;
+  border: 1px solid var(--mobile-line) !important;
+  border-radius: 10px !important;
+  background: #f1f3ef !important;
+}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-view-switch button {
+  height: 34px !important;
+  min-height: 34px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent;
+  box-shadow: none !important;
+  color: var(--mobile-green) !important;
+  font-size: 12px;
+}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-view-switch button.is-selected {
+  background: var(--mobile-green) !important;
+  color: #fff !important;
+}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .schedule-panel.mobile-list-view .mobile-view-switch {
+  grid-column: 2 !important;
+  width: 124px !important;
+}
+
+/* Compact date/weather/multiselect toolbar: one final state and geometry contract. */
+html[data-preview-mode="mobile"] .mobile-select-toggle-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 4px;
+  padding: 0 2px;
+}
+html[data-preview-mode="mobile"] .mobile-select-count { color: var(--mobile-muted) !important; font-size: 11px !important; white-space: nowrap; }
+html[data-preview-mode="mobile"] :is(.mobile-multiselect-btn, .mobile-select-done) {
+  flex: 0 0 auto;
+  padding: 0 10px !important;
+  border: 1px solid var(--mobile-line) !important;
+  border-radius: 999px;
+  background: #fff !important;
+  color: var(--mobile-green) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  white-space: nowrap;
+}
+html[data-preview-mode="mobile"] .mobile-select-done { border-color: var(--mobile-green) !important; background: transparent !important; }
+html[data-preview-mode="mobile"] .mobile-multiselect-btn.is-active { border-color: var(--mobile-green) !important; background: var(--mobile-green) !important; color: #fff !important; }
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-date-strip > .mobile-timeline-controls {
+  box-sizing: border-box !important;
+  display: grid !important;
+  grid-column: 1 / -1 !important;
+  grid-row: 2 !important;
+  grid-template-columns: minmax(0, 1fr) 36px auto auto !important;
+  align-items: center !important;
+  align-self: center !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  gap: 6px !important;
+  padding: 1px 0 !important;
+  overflow: visible !important;
+}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-timeline-controls > :is(.mobile-timeline-date, .mobile-timeline-date-fallback) {
+  display: block;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  color: var(--mobile-green);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+html[data-preview-mode="mobile"] .mobile-timeline-date {
+  flex: 1 1 auto;
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0 24px 0 7px;
+  border: 0 !important;
+  border-radius: 0;
+  background-color: transparent;
+  background-image: var(--ui-select-arrow);
+  background-position: right 7px center;
+  background-size: 12px 12px;
+  background-repeat: no-repeat;
+}
+@media (forced-colors: active) {
+  html[data-preview-mode="mobile"] .mobile-timeline-date {
+    -webkit-appearance: auto;
+    appearance: auto;
+    background-image: none;
+  }
+}
+html[data-preview-mode="mobile"] .mobile-timeline-date-fallback { display: none !important; }
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-timeline-controls.is-all-dates > .mobile-timeline-date { display: none !important; }
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-timeline-controls.is-all-dates > .mobile-timeline-date-fallback { display: block !important; }
+html[data-preview-mode="mobile"] body.mobile-multiselect :is(.mobile-timeline-date, .mobile-all-dates-btn) { display: none; }
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"].mobile-multiselect .mobile-timeline-controls { grid-template-columns: minmax(0, 1fr) 40px auto !important; }
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .mobile-date-strip > .mobile-timeline-controls > :is(.mobile-timeline-date, .mobile-weather-background-btn, .mobile-all-dates-btn, .mobile-multiselect-btn, .mobile-select-done) {
+  box-sizing: border-box !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  margin: 0 !important;
+}
+html[data-preview-mode="mobile"] .mobile-weather-background-btn {
+  flex: 0 0 auto;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  overflow: hidden;
+  padding: 0 !important;
+  border: 1px solid var(--mobile-line) !important;
+  border-radius: 999px;
+  background: #fff !important;
+  color: transparent !important;
+  font-size: 0 !important;
+}
+html[data-preview-mode="mobile"] .mobile-weather-background-btn::before { content: '☁'; color: var(--mobile-green); font-size: 14px; }
+html[data-preview-mode="mobile"] .mobile-weather-background-btn.is-active { border-color: var(--mobile-green) !important; background: var(--mobile-green) !important; }
+html[data-preview-mode="mobile"] .mobile-weather-background-btn.is-active::before { color: #fff; }
+html[data-preview-mode="mobile"] .mobile-all-dates-btn {
+  flex: 0 0 auto;
+  padding: 0 10px !important;
+  overflow: hidden !important;
+  border: 1px solid var(--mobile-line) !important;
+  border-radius: 999px;
+  background: #fff !important;
+  color: var(--mobile-green) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap;
+}
+html[data-preview-mode="mobile"] .mobile-all-dates-btn.is-active { border-color: var(--mobile-green) !important; background: var(--mobile-green) !important; color: #fff !important; }
+html[data-preview-mode="mobile"] .schedule-panel.mobile-list-view .mobile-timeline-controls { display: none !important; }
+html[data-preview-mode="mobile"] .calendar-grid.png-export .mobile-timeline-controls { display: block !important; }
+html[data-preview-mode="mobile"] .calendar-grid.png-export .mobile-timeline-controls > :not(.mobile-timeline-date-fallback) { display: none !important; }
+html[data-preview-mode="mobile"] .calendar-grid.png-export .mobile-timeline-date-fallback { display: inline !important; }
+@media (max-width: 380px) {
+  html[data-preview-mode="mobile"] .mobile-timeline-controls { gap: 4px !important; }
+  html[data-preview-mode="mobile"] .mobile-timeline-controls > :is(.mobile-all-dates-btn, .mobile-multiselect-btn) { padding-inline: 8px !important; font-size: 12px !important; }
+}
+
+/* 时间表页面最终布局：组合入口只保留主视图显隐。 */
+@media all{
+html[data-preview-mode="mobile"] .schedule-panel{position:relative!important;width:auto!important;max-width:none!important;margin:12px 0 0!important;padding:0!important;border:0!important;border-radius:0!important;background:#fff!important;box-shadow:none!important}
+html[data-preview-mode="mobile"] .schedule-panel>.aside-head{display:block!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;overflow:visible!important}
+html[data-preview-mode="mobile"] .schedule-panel>.aside-head>div:first-child{display:none!important}
+html[data-preview-mode="mobile"] .schedule-panel>.aside-head>div:last-child{display:contents!important}
+html[data-preview-mode="mobile"] #dayFilter{display:none!important}
+html[data-preview-mode="mobile"] #importFlightBtn,html[data-preview-mode="mobile"] #updateScheduleWeather,html[data-preview-mode="mobile"] .schedule-panel .panel-expand{display:none!important}
+html[data-preview-mode="mobile"] .schedule-panel>.aside-head>div:last-child>button:not(#addScheduleBtn),html[data-preview-mode="mobile"] .schedule-panel>.aside-head>div:last-child>a{display:none!important}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .schedule-panel{height:calc(100dvh - 184px)!important;overflow:hidden!important}
+html[data-preview-mode="mobile"] .schedule{margin-top:0!important}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .schedule-panel .schedule-scroll{height:calc(100dvh - 357px)!important;max-height:none!important;overflow-x:auto!important;overflow-y:auto!important;overscroll-behavior:contain!important;padding-bottom:126px!important;scroll-padding-bottom:126px!important;scrollbar-gutter:stable;transition:height .2s ease,padding .2s ease;border:0!important;border-radius:0!important;background:#fffefa!important}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"].mobile-header-collapsed .schedule-panel .schedule-scroll{height:calc(100dvh - 313px)!important}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] #addScheduleBtn{position:fixed!important;left:50%!important;right:auto!important;bottom:calc(var(--mobile-safe-bottom,0px) + 102px)!important;z-index:1200;width:min(calc(100vw - 32px),calc(var(--mobile-canvas-max,430px) - 32px))!important;height:52px!important;min-height:var(--mobile-control-primary)!important;border:0!important;border-radius:999px!important;background:var(--mobile-green)!important;color:#fff!important;box-shadow:0 10px 28px #003b2238!important;font-size:14px!important;font-weight:800!important;transform:translateX(-50%)!important;backdrop-filter:blur(14px)}
+html[data-preview-mode="mobile"] .mobile-date-strip{width:100%!important;grid-template-columns:minmax(0,1fr) 124px!important;grid-template-rows:44px 40px!important;gap:6px 8px!important;margin-right:0!important;margin-left:0!important;padding:6px 0!important;border-bottom:0!important}
+html[data-preview-mode="mobile"] .mobile-weekdays{grid-column:1!important;grid-row:1!important;width:100%!important;min-width:0!important;gap:2px!important;padding:0!important;scroll-padding-inline:0!important}
+html[data-preview-mode="mobile"] .mobile-weekdays button{flex:0 0 38px!important;width:38px!important;height:44px!important;padding:2px 0!important;border:0!important;border-radius:999px!important;background:transparent!important;color:var(--mobile-ink)!important;box-shadow:none!important;font-weight:700!important}
+html[data-preview-mode="mobile"] .mobile-weekdays button.is-selected{border-color:var(--mobile-green)!important;background:var(--mobile-green)!important;color:#fff!important;box-shadow:none!important}
+html[data-preview-mode="mobile"] .calendar-grid{grid-template-columns:54px repeat(var(--days),calc(min(100vw,var(--mobile-canvas-max,430px)) - 86px))!important;background:#fffefa!important}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .calendar-grid{grid-template-rows:0 auto!important}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] :is(.calendar-corner,.calendar-head){display:none!important;height:0!important}
+html[data-preview-mode="mobile"] .calendar-corner,html[data-preview-mode="mobile"] .calendar-head{box-sizing:border-box!important;background:#fffefa!important;border-bottom:1px solid var(--mobile-line)!important}
+html[data-preview-mode="mobile"] .calendar-head{align-items:center!important;gap:6px!important;padding:6px 12px!important;white-space:nowrap!important;box-shadow:0 1px 0 var(--mobile-line)!important}
+html[data-preview-mode="mobile"] .calendar-head b,html[data-preview-mode="mobile"] .calendar-head small{display:inline!important;margin:0!important}
+html[data-preview-mode="mobile"] .time-rail{background:#fffefa!important;color:#68716d!important;box-shadow:none!important}
+html[data-preview-mode="mobile"] .calendar-day{background-image:repeating-linear-gradient(to bottom,transparent 0,transparent calc(var(--hour-height) - 1px),var(--mobile-line) var(--hour-height))!important}
+html[data-preview-mode="mobile"] .schedule-panel.mobile-list-view .calendar-grid{display:block!important;min-width:0!important;padding:10px 0!important;background:#fbfaf6!important}
+html[data-preview-mode="mobile"] .schedule-panel.mobile-list-view :is(.calendar-corner,.calendar-head,.time-rail){display:none!important}
+html[data-preview-mode="mobile"] .schedule-panel.mobile-list-view .calendar-day{position:static!important;height:auto!important;min-height:0!important;border:0!important;background:none!important}
+html[data-preview-mode="mobile"] .schedule-panel.mobile-list-view .calendar-block{position:relative!important;inset:auto!important;left:auto!important;right:auto!important;top:auto!important;height:auto!important;min-height:58px!important;margin:0 0 10px!important;padding:12px!important;border-left-width:4px!important;border-radius:10px!important}
+html[data-preview-mode="mobile"] .mobile-schedule-skeleton{display:grid;gap:10px;padding:14px 0}
+html[data-preview-mode="mobile"] .mobile-schedule-skeleton span{display:block;height:48px;border-radius:11px;background:linear-gradient(90deg,#eef1ec 25%,#f8faf6 45%,#eef1ec 65%);background-size:240% 100%;animation:mobile-skeleton 1.2s ease-in-out infinite}
+html[data-preview-mode="mobile"] .mobile-schedule-skeleton span:nth-child(2){height:112px}
+html[data-preview-mode="mobile"] .mobile-schedule-skeleton span:nth-child(3){height:76px}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .calendar-grid:empty{display:grid!important;min-height:160px!important;place-items:center!important;border:1px dashed var(--ui-line)!important;border-radius:var(--ui-radius-surface)!important;background:var(--ui-surface)!important}
+html[data-preview-mode="mobile"] body[data-mobile-view="schedule"] .calendar-grid:empty::before{content:'暂无安排，点击“新增安排”开始规划';color:var(--ui-muted);font-size:var(--ui-body);text-align:center}
+html[data-preview-mode="mobile"] #schedule .schedule-empty {
+  color: var(--ui-muted);
+  font-size: var(--ui-body);
+  line-height: var(--ui-leading-body);
+}
+}
+@keyframes mobile-skeleton{to{background-position:-240% 0}}
