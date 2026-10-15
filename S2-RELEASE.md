@@ -107,7 +107,7 @@ S1 控制台待确认不阻止本地完成 S2 工具，执行部署时由操作�
 ## S3：GitHub 自动门禁
 
 `.github/workflows/deploy-pages.yml` 保留文件路径，流程名称改为 `Release gate`。
-推送 main、提出 PR、手动运行都会执行：锁文件安装 → 安装 Chromium/WebKit →
+推送 main、提出 PR、手动运行都会执行：锁文件安装 → 生产依赖高危检查 → 安装 Chromium/WebKit →
 与本地相同的 release prepare → 指纹复验 → 上传该次通过的产物与记录。
 失败立即阻断产物交付，另存 7 天失败诊断；通过的发布包保留 14 天。
 每次版本号绑定 GitHub run ID/attempt，产物名称绑定源码 SHA。
@@ -126,3 +126,12 @@ S1 控制台待确认不阻止本地完成 S2 工具，执行部署时由操作�
 `npm run check:release -- 0.2.0-s3-ci` exit 0（lint 18 条、语法 132 文件、架构检查、
 单元 160/160、浏览器 30/30）。新候选指纹复验、部署预览通过；旧 `0.2.0-s2`
 因发布规则变化被拒绝，不能继续当作当前版本发布。以上不是 GitHub 远端运行结果。
+
+### GitHub 首跑与修复
+
+2026-10-15 已整理提交并推送 main。首次运行
+[38705088885](https://github.com/defy-6/roadtrip_planner_demo/actions/runs/38705088885)
+在架构 lint 阶段失败，正确跳过产物交付。原因是 Windows 分隔符导致跨功能依赖漏检，
+Linux 又将 runtime 装配层误报为普通 feature。已统一导入路径、识别装配层所有权，
+并修复相对/绝对路径与缓存参数导致的循环依赖漏检；Windows/Linux 正反向回归覆盖。
+生产依赖使用兼容补丁修复 npm 报告，并新增高危/严重漏洞的 CI 阻断。

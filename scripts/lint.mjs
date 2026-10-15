@@ -1,6 +1,7 @@
 // 架构 lint:除静态壳规则外,检查目录依赖方向、纯模块约束、runtime 行数与循环依赖。
 import { readFile, readdir } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
+import { crossesFeatureBoundary, findImportCycles, resolveImport } from './import-graph.mjs';
 
 const root = 'public';
 let failed = false;
@@ -70,12 +71,7 @@ const featureDirs = new Set(['places', 'schedule', 'routes', 'map', 'flights', '
 for (const file of files.filter(file => file.startsWith(join(root, 'features')) && !file.endsWith('model.js') && !file.endsWith('runtime.js'))) {
   const content = await readFile(file, 'utf8');
   const bad = [...content.matchAll(/from\s+['"]([^'"]+)['"]/g)].map(match => match[1])
-    .filter(path => /^\.\.\//.test(path)) // 只检查跨目录相对导入
-    .filter(path => {
-      const resolved = resolve(join(file, '..'), path);
-      const rel = relative(join(root, 'features'), resolved).split('/')[0];
-      return featureDirs.has(rel);
-    });
+    .filter(specifier => crossesFeatureBoundary(file, specifier, join(root, 'features'), featureDirs));
   if (bad.length) fail(`feature must not import another feature directory: ${file} -> ${bad.join(', ')}`);
 }
 pass();
@@ -91,26 +87,11 @@ const importMap = new Map();
 for (const file of files) {
   const content = await readFile(file, 'utf8');
   const deps = [...content.matchAll(/from\s+['"]([^'"]+)['"]/g)].map(match => {
-    const specifier = match[1];
-    if (!specifier.startsWith('.')) return null;
-    return resolve(join(file, '..'), specifier);
+    return resolveImport(file, match[1]);
   }).filter(Boolean);
-  importMap.set(file, deps);
+  importMap.set(resolve(file), deps);
 }
-const visiting = new Set(), visited = new Set(), cyclePaths = [];
-function dfs(file, trail) {
-  if (visiting.has(file)) {
-    const start = trail.indexOf(file);
-    cyclePaths.push([...trail.slice(start), file].map(entry => relative(root, entry)).join(' -> '));
-    return;
-  }
-  if (visited.has(file)) return;
-  visiting.add(file);
-  for (const dep of importMap.get(file) || []) if (importMap.has(dep)) dfs(dep, [...trail, file]);
-  visiting.delete(file);
-  visited.add(file);
-}
-for (const file of files) dfs(file, []);
+const cyclePaths = findImportCycles(importMap).map(cycle => cycle.map(file => relative(root, file)).join(' -> '));
 if (cyclePaths.length) fail(`circular imports detected:\n  ${cyclePaths.join('\n  ')}`);
 pass();
 

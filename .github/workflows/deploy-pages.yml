@@ -28,6 +28,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Reject high and critical production dependency advisories
+        run: npm audit --omit=dev --audit-level=high
       - name: Install browser runtimes
         run: npx playwright install --with-deps chromium webkit
       - name: Run the same release gate as local development
