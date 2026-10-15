@@ -1,32 +1,53 @@
-name: Deploy shared itinerary
+name: Release gate
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: github-pages
-  cancel-in-progress: false
+  group: release-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+  release-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      RELEASE_VERSION: 0.2.0-ci.${{ github.run_id }}.${{ github.run_attempt }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
         with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install browser runtimes
+        run: npx playwright install --with-deps chromium webkit
+      - name: Run the same release gate as local development
+        run: npm run check:release -- "$RELEASE_VERSION"
+      - name: Verify the tested source and artifact
+        run: npm run release:verify -- "$RELEASE_VERSION"
+      - name: Save release artifact and record
+        uses: actions/upload-artifact@v4
         with:
-          path: docs
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          name: release-${{ github.sha }}-${{ github.run_attempt }}
+          path: work/releases/${{ env.RELEASE_VERSION }}/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Save failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/
+            work/releases/${{ env.RELEASE_VERSION }}/release.json
+          if-no-files-found: ignore
+          retention-days: 7

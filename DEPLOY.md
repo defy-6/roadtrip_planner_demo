@@ -49,7 +49,7 @@ curl -s -X POST localhost:3000/api/trips -H 'Content-Type: application/json' \
 
 ### 3. 创建云数据库集合（必须手动建，add 不会自动建）
 
-在云开发控制台 → 数据库，创建 4 个集合：
+新环境在云开发控制台 → 数据库，创建 5 个集合；已有正式环境只核对，不重复创建：
 
 | 集合名 | 用途 | 建议权限 |
 |---|---|---|
@@ -57,6 +57,7 @@ curl -s -X POST localhost:3000/api/trips -H 'Content-Type: application/json' \
 | `sessions` | 登录 token（30 天过期） | 仅管理端可读写 |
 | `trips` | 行程（data 为完整行程 JSON） | 仅管理端可读写 |
 | `trip_members` | 行程成员（owner / editor） | 仅管理端可读写 |
+| `trip_backups` | 完整行程备份与恢复前快照 | 仅管理端可读写 |
 
 > 所有读写都经云函数（管理端权限），前端不直接碰数据库，因此集合权限统一设「仅管理端」。
 
